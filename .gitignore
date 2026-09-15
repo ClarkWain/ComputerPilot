@@ -1,0 +1,22 @@
+/build/
+/.deps/
+/out/
+/core-test-artifacts/
+/json-test-artifacts/
+# Repository-local experiment records (not distributed)
+/BACKGROUND-INPUT-RESEARCH.md
+/COMPUTER-USE-FAILURES.md
+/LOCKED-SESSION-RESEARCH.md
+/VALIDATION*.md
+/tests/evaluation.xml
+/.vs/
+/CMakeUserPresets.json
+*.user
+*.pdb
+*.log
+/.env
+/.env.*
+/.local/
+
+/models/*
+!/models/manifest.json

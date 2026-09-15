@@ -1,0 +1,51 @@
+name: Windows build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Configure and build
+        shell: pwsh
+        run: |
+          cmake --preset core-only
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build --preset core-only --parallel 4
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Non-interactive regression tests
+        run: ctest --preset core-only -LE interactive
+      - name: Build C++ consumer
+        shell: pwsh
+        run: |
+          cmake -S examples/cpp -B build/consumer -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build build/consumer --config Release --parallel 4
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & build/consumer/Release/desktop-pilot-example.exe
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Package and smoke test
+        shell: pwsh
+        run: |
+          cmake -DDP_BINARY_DIR=build/core/Release -DDP_PACKAGE_DIR=out/dist/DesktopPilot -P cmake/package.cmake
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & out/dist/DesktopPilot/bin/desktop-pilot.exe capabilities
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & scripts/check-package.ps1 -Path out/dist/DesktopPilot
+          Compress-Archive -Path out/dist/DesktopPilot -DestinationPath out/DesktopPilot-windows-x64-core.zip
+          $hash = (Get-FileHash out/DesktopPilot-windows-x64-core.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  DesktopPilot-windows-x64-core.zip" | Set-Content -Encoding ascii out/SHA256SUMS.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: DesktopPilot-windows-x64-core
+          path: |
+            out/DesktopPilot-windows-x64-core.zip
+            out/SHA256SUMS.txt
+          if-no-files-found: error

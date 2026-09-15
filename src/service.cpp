@@ -1,0 +1,207 @@
+#include <algorithm>
+#include <cmath>
+#include <chrono>
+#include <desktop_pilot/service.hpp>
+namespace dp {
+namespace {
+std::filesystem::path path(const std::string &value) { return std::filesystem::u8path(value); }
+} // namespace
+bool Service::read_only(const std::string &op) {
+    return op == "runtime.capabilities" || op == "runtime.describe" || op == "action.status" ||
+           op == "system.info" || op == "system.session" || op == "process.list" || op == "display.list" || op == "window.list" ||
+           op == "window.get" || op == "window.children" || op == "window.foreground" || op == "ui.tree" || op == "ui.find" ||
+           op == "ui.get" || op == "ui.at_point" || op == "ui.text" || op == "ui.selection" ||
+           op == "clipboard.formats" || op == "clipboard.read" || op == "vision.parse" ||
+           op == "vision.ocr";
+}
+Json Service::execute(const std::string &op, const Json &args) {
+    if (!args.contains("requestId"))
+        return perform(op, args);
+    auto id = args.at("requestId").get<std::string>();
+    if (id.empty())
+        throw std::invalid_argument("requestId must not be empty");
+    Json payload = {{"operation", op}, {"args", args}};
+    auto found = receipts_.find(id);
+    if (found != receipts_.end()) {
+        if (found->second.first != payload)
+            throw std::invalid_argument("requestId_conflict: same id with different arguments");
+        auto replay = found->second.second;
+        replay["replayed"] = true;
+        return replay;
+    }
+    Json pending = {
+        {"requestId", id}, {"status", "unknown"}, {"dispatch", "dispatched"}, {"verification", "unknown"}};
+    receipts_[id] = {payload, pending};
+    try {
+        auto result = perform(op, args);
+        if (!result.is_object())
+            result = {{"result", result}};
+        result["requestId"] = id;
+        result["replayed"] = false;
+        receipts_[id].second = result;
+        return result;
+    } catch (const std::exception &e) {
+        auto result = pending;
+        result["status"] = "error";
+        result["message"] = e.what();
+        result["retryability"] = "inspect before retry; same requestId will not dispatch again";
+        receipts_[id].second = result;
+        return result;
+    }
+}
+Json Service::perform(const std::string &op, const Json &args) {
+    if (op == "action.status") {
+        auto found = receipts_.find(args.at("id").get<std::string>());
+        if (found == receipts_.end())
+            return {{"status", "not_found"}, {"dispatch", "not_started"}};
+        return found->second.second;
+    }
+    if (op.starts_with("capture.")) {
+        auto captured = desktop_.execute(op, args);
+        captured["contentRef"] = captured["imageRef"];
+        captured["imageRef"] =
+            "capture-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
+            std::to_string(++capture_serial_) + "-" + captured["contentRef"].get<std::string>();
+        if (args.contains("windowRef"))
+            captured["windowRef"] = args["windowRef"];
+        images_[captured.at("imageRef").get<std::string>()] = captured;
+        return captured;
+    }
+    if (op.starts_with("input.") &&
+        args.value("coordinateSpace", std::string{}) != "window_relative" &&
+        args.value("coordinateSpace", std::string{}) != "client_relative" &&
+        args.value("coordinateSpace", std::string("screen_physical")) != "screen_physical") {
+        if (args.at("coordinateSpace") != "image_pixels")
+            throw std::invalid_argument("Supported input spaces: screen_physical, image_pixels");
+        auto id = args.at("imageRef").get<std::string>();
+        auto it = images_.find(id);
+        if (it == images_.end())
+            throw std::invalid_argument("Unknown imageRef; use a capture returned by this session");
+        auto frame = it->second;
+        if (frame.contains("windowRef")) {
+            auto current = desktop_.execute("window.get", {{"windowRef", frame["windowRef"]}});
+            if (current["bounds"] != frame["bounds"])
+                throw std::runtime_error("stale_image_geometry; capture again or use live UIA elementRef");
+        }
+        auto converted = args;
+        int x = args.at("x"), y = args.at("y");
+        if (x < 0 || y < 0 || x >= frame["width"].get<int>() || y >= frame["height"].get<int>())
+            throw std::invalid_argument("Point outside image bounds");
+        converted["x"] = x + frame["bounds"]["x"].get<int>();
+        converted["y"] = y + frame["bounds"]["y"].get<int>();
+        converted["coordinateSpace"] = "screen_physical";
+        if (op == "input.drag") {
+            int tx = args.at("toX"), ty = args.at("toY");
+            if (tx < 0 || ty < 0 || tx >= frame["width"].get<int>() || ty >= frame["height"].get<int>())
+                throw std::invalid_argument("Drag endpoint outside image bounds");
+            converted["toX"] = tx + frame["bounds"]["x"].get<int>();
+            converted["toY"] = ty + frame["bounds"]["y"].get<int>();
+        }
+        return desktop_.execute(op, converted);
+    }
+    if (op == "runtime.capabilities") {
+        auto r = desktop_.execute(op, args);
+        r["operations"].push_back("runtime.describe");
+        r["operations"].push_back("action.status");
+        r["operations"].push_back("vision.parse");
+        r["operations"].push_back("vision.ocr");
+        r["operations"].push_back("inspect.hybrid");
+        r["vision"] = {
+            {"detector", Detector::available()},
+            {"ocr", Ocr::available()},
+            {"loaded", {{"detector", bool(detector_)}, {"ocr", bool(ocr_)}}}};
+        r["transport"] = {"mcp-stdio", "jsonl"};
+        return r;
+    }
+    if (op == "runtime.describe")
+        return Json::parse(
+            R"({"references":"windowRef and elementRef are session-local","nativeQuery":{"operation":"ui.find","args":{"windowRef":"w1","selector":{"role":"Edit","nameContains":"title"},"depth":8,"limit":50,"offset":0,"nodeBudget":5000}},"setValue":{"operation":"ui.set_value","args":{"elementRef":"e2","value":"text"}},"capture":{"operation":"capture.window","args":{"windowRef":"w1","output":"absolute PNG path"}},"vision":{"operation":"vision.parse","args":{"image":"absolute PNG path","model":"absolute detector .pt path","ocrModels":"optional OCR directory"}},"hybrid":{"operation":"inspect.hybrid","args":{"windowRef":"w1","output":"absolute PNG path","model":"absolute detector .pt path"}},"input":{"coordinateSpace":"screen_physical","click":{"x":100,"y":100,"button":"left","count":1},"typeText":{"text":"Unicode text"},"keyChord":{"keys":["CTRL","A"]}}})");
+    if (op == "inspect.hybrid") {
+        std::vector<std::filesystem::path> files{path(args.at("output").get<std::string>()),
+                                                 path(args.at("model").get<std::string>())};
+        if (args.contains("ocrModels"))
+            for (auto name : {"det.onnx", "rec.onnx"})
+                files.push_back(path(args["ocrModels"].get<std::string>()) / name);
+        ensure_distinct_paths(files);
+        auto captured = execute("capture.window", args);
+        auto vision_args = args;
+        vision_args["image"] = captured["path"];
+        auto visual = execute("vision.parse", vision_args);
+        auto tree = desktop_.execute("ui.tree", args);
+        int left = captured["bounds"]["x"], top = captured["bounds"]["y"];
+        for (auto &region : visual["elements"]) {
+            auto b = region["bounds"];
+            double cx = b["x"].get<double>() + b["width"].get<double>() / 2 + left,
+                   cy = b["y"].get<double>() + b["height"].get<double>() / 2 + top;
+            double best = 1e30;
+            Json match = nullptr;
+            for (auto &node : tree["elements"]) {
+                auto n = node["bounds"];
+                double x = n["x"], y = n["y"], w = n["width"], h = n["height"];
+                if (cx >= x && cy >= y && cx < x + w && cy < y + h && w * h < best) {
+                    match = node["elementRef"];
+                    best = w * h;
+                }
+            }
+            region["nativeRef"] = match;
+            region["associationMethod"] =
+                "smallest UIA bounds containing visual center; not semantic identity proof";
+            region["screenCandidatePoint"] = {{"x", cx},
+                                              {"y", cy},
+                                              {"source", "visual_bounds_center"},
+                                              {"coordinateSpace", "screen_physical"}};
+        }
+        visual["capture"] = captured;
+        visual["native"] = tree;
+        visual["atomicSnapshot"] = false;
+        return visual;
+    }
+    if (!op.starts_with("vision."))
+        return desktop_.execute(op, args);
+    if (op != "vision.parse" && op != "vision.ocr")
+        throw std::invalid_argument("Unknown vision operation");
+    auto image_path = path(args.at("image").get<std::string>());
+    auto image = load_image(image_path);
+    auto image_ref = "img-sha256-" + file_sha256(image_path);
+    DetectionResult detected;
+    OcrResult recognized;
+    Json result = {{"status", "ok"},
+                   {"imageRef", image_ref},
+                   {"width", image.width},
+                   {"height", image.height},
+                   {"components",
+                    {{"detector", "not_requested"}, {"ocr", "not_requested"}}}};
+    if (op == "vision.parse") {
+        auto file = args.at("model").get<std::string>();
+        if (!detector_ || detector_path_ != file) {
+            auto replacement = std::make_unique<Detector>(path(file), DetectorOptions{});
+            detector_ = std::move(replacement);
+            detector_path_ = file;
+        }
+        detected = detector_->run(image);
+        result["components"]["detector"] = "completed";
+        result["detectorTimingsMs"] = detected.timings_ms;
+    }
+    if (op == "vision.ocr" || args.contains("ocrModels")) {
+        try {
+            auto dir = args.at("ocrModels").get<std::string>();
+            if (!ocr_ || ocr_path_ != dir) {
+                auto replacement = std::make_unique<Ocr>(path(dir), OcrOptions{});
+                ocr_ = std::move(replacement);
+                ocr_path_ = dir;
+            }
+            recognized = ocr_->run(image);
+            result["textLines"] = text_lines_json(recognized.lines, image_ref);
+            result["components"]["ocr"] = recognized.truncated ? "partial" : "completed";
+            if (recognized.truncated)
+                result["status"] = "partial";
+        } catch (const std::exception &e) {
+            result["components"]["ocr"] = "failed";
+            result["ocrError"] = e.what();
+            result["status"] = "partial";
+        }
+    }
+    result["elements"] = fuse_text(detected.detections, recognized.lines, image_ref);
+    return result;
+}
+} // namespace dp

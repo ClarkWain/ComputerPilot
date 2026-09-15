@@ -1,0 +1,16 @@
+<!doctype html><meta charset="utf-8"><title>DesktopPilot Background Input Fixture</title>
+<style>body{font:18px sans-serif;padding:30px;background:#fff;color:#111}label{display:block;margin-top:15px}input,textarea,[contenteditable]{display:block;width:650px;border:1px solid #777;padding:12px;font:18px monospace}textarea,[contenteditable]{min-height:80px}#events{height:280px}</style>
+<h1>DesktopPilot Background Input Fixture</h1>
+<label>TextInput<input id="plain" aria-label="TextInput" value="abc"></label>
+<label>TextArea<textarea id="area" aria-label="TextArea">abc</textarea></label>
+<label>RichEdit<div id="rich" role="textbox" aria-label="RichEdit" contenteditable="true">abc</div></label>
+<label>Events<textarea id="events" aria-label="Events" readonly></textarea></label>
+<script>
+const history=[]; const output=document.getElementById('events');
+for(const type of ['focusin','keydown','keyup','beforeinput','input','selectionchange']) document.addEventListener(type,e=>{
+ if(e.target===output)return;
+ const active=document.activeElement;
+ history.push({type,target:e.target.id||'',active:active?.id||'',key:e.key||'',data:e.data||'',inputType:e.inputType||'',trusted:e.isTrusted,selection:String(getSelection()),plain:document.getElementById('plain').value,area:document.getElementById('area').value,rich:document.getElementById('rich').innerText});
+ output.value=JSON.stringify(history.slice(-20));
+},true);
+</script>

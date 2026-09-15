@@ -1,0 +1,34 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "windows-release",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "${sourceDir}/.deps/libtorch",
+        "DP_WITH_TORCH": "ON",
+        "DP_WITH_OCR": "ON",
+        "OpenCV_DIR": "${sourceDir}/.deps/opencv-build",
+        "DP_TEST_OCR": "${sourceDir}/models/ocr",
+        "DP_TEST_MODEL": "${sourceDir}/models/icon_detect_v3/model.pt",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "core-only",
+      "inherits": "windows-release",
+      "binaryDir": "${sourceDir}/build/core",
+      "cacheVariables": { "DP_WITH_TORCH": "OFF", "DP_TEST_MODEL": "", "DP_WITH_OCR": "OFF", "DP_TEST_OCR": "" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release" },
+    { "name": "core-only", "configurePreset": "core-only", "configuration": "Release" }
+  ],
+  "testPresets": [
+    { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "core-only", "configurePreset": "core-only", "configuration": "Release", "output": { "outputOnFailure": true } }
+  ]
+}

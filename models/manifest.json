@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "detector": {
+    "repository": "microsoft/OmniParser-v2.0",
+    "revision": "ef77ffa0da68a824fd59a2d11215e2862b07b5e9",
+    "path": "icon_detect_v3/model.pt",
+    "sha256": "11c6cbb77f22569fab22d86c76407a83ec81ab89dbfe28279854822d6e3fb00c",
+    "bytes": 281182680,
+    "format": "torchscript",
+    "contract": "yolov9_raw_logits_distances_3_scales",
+    "licenseSource": "https://github.com/microsoft/OmniParser#model-weights-license",
+    "licenseNote": "README states MIT for the new detector; the selected PR tree lacks a per-file license notice. See THIRD_PARTY_NOTICES.md.",
+    "preprocess": {
+      "color": "RGB",
+      "layout": "NCHW",
+      "dtype": "float32",
+      "padding": 114,
+      "stride": 32,
+      "resize": "native_antialiased_lanczos3",
+      "pillowBitwiseParity": "not_verified"
+    }
+  },
+  "runtime": {
+    "name": "LibTorch",
+    "version": "2.9.1+cpu",
+    "platform": "windows-x64-release",
+    "archiveSha256": "d97df5305942160020067b553243fc2845b83549a6fec27c7fdb7957a9aa4a23"
+  },
+  "ocr": {
+    "status": "implemented",
+    "family": "PP-OCRv4 mobile",
+    "exporter": "RapidAI/RapidOCR",
+    "revision": "v3.9.2",
+    "license": "Apache-2.0",
+    "det": {
+      "path": "ocr/det.onnx",
+      "source": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv4/det/ch_PP-OCRv4_det_mobile.onnx",
+      "sha256": "d2a7720d45a54257208b1e13e36a8479894cb74155a5efe29462512d42f49da9",
+      "bytes": 4745517
+    },
+    "rec": {
+      "path": "ocr/rec.onnx",
+      "source": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.9.2/onnx/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile.onnx",
+      "sha256": "48fc40f24f6d2a207a2b1091d3437eb3cc3eb6b676dc3ef9c37384005483683b",
+      "bytes": 10857958,
+      "dictionary": "metadata.character + blank at index 0 + space at end",
+      "classes": 6625
+    },
+    "runtime": {
+      "name": "ONNX Runtime",
+      "version": "1.23.2",
+      "device": "cpu",
+      "archiveSha256": "0b38df9af21834e41e73d602d90db5cb06dbd1ca618948b8f1d66d607ac9f3cd"
+    },
+    "opencv": {
+      "version": "4.10.0",
+      "modules": [
+        "core",
+        "imgproc"
+      ],
+      "archiveSha256": "3810bca2b1d1c572912df0ac3888126341f3762dfd28e91068c805fb656d0e51",
+      "pythonDetection": false
+    },
+    "preprocess": {
+      "color": "BGR",
+      "mean": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "std": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "recognizerHeight": 48
+    },
+    "orientationClassifier": false,
+    "upstreamBitwiseParity": "not_verified"
+  }
+}

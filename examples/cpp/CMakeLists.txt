@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.29)
+project(DesktopPilotConsumer LANGUAGES CXX)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(DP_WITH_TORCH OFF CACHE BOOL "" FORCE)
+set(DP_WITH_OCR OFF CACHE BOOL "" FORCE)
+add_subdirectory(../.. desktop-pilot)
+add_executable(desktop-pilot-example main.cpp)
+target_link_libraries(desktop-pilot-example PRIVATE DesktopPilot::Service)
