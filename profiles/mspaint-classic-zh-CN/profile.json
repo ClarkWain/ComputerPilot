@@ -1,0 +1,452 @@
+{
+  "schemaVersion": 1,
+  "clickSettleMs": 20,
+  "popupPollMs": 20,
+  "id": "mspaint-classic-zh-CN",
+  "dpi": 96,
+  "referenceToolSize": 20,
+  "minimumWindowWidth": 1100,
+  "recommendedWindow": {"width": 1200, "height": 900, "units": "dpi96", "maximize": false},
+  "canvasInset": [
+    3,
+    5
+  ],
+  "selectors": {
+    "zoom": {
+      "name": "100%",
+      "role": "Text"
+    },
+    "canvas": {
+      "nameContains": "画布",
+      "role": "Pane"
+    },
+    "ellipse": {
+      "name": "椭圆形",
+      "role": "ListItem"
+    },
+    "polygon": {
+      "name": "多边形",
+      "role": "ListItem"
+    },
+    "rectangle": {
+      "name": "矩形",
+      "role": "ListItem"
+    },
+    "roundedRectangle": {
+      "name": "圆角矩形",
+      "role": "ListItem"
+    },
+    "line": {
+      "name": "直线",
+      "role": "ListItem"
+    },
+    "fill": {
+      "name": "填充"
+    },
+    "outline": {
+      "name": "轮廓"
+    },
+    "width": {
+      "name": "粗细"
+    },
+    "primary": {
+      "name": "颜色 1",
+      "role": "Button"
+    },
+    "secondary": {
+      "name": "颜色 2",
+      "role": "Button"
+    },
+    "editColors": {
+      "name": "编辑颜色",
+      "role": "Button"
+    },
+    "commit": {
+      "name": "铅笔",
+      "role": "Button"
+    },
+    "text": {
+      "name": "文本",
+      "role": "Button"
+    },
+    "brushMenu": {
+      "name": "刷子",
+      "role": "Button"
+    }
+  },
+  "noFill": {
+    "name": "不填充"
+  },
+  "solidFill": {
+    "name": "纯色"
+  },
+  "solidOutline": {
+    "name": "纯色"
+  },
+  "widthOptions": {
+    "1": {
+      "name": "1px"
+    },
+    "3": {
+      "name": "3px"
+    },
+    "5": {
+      "name": "5px"
+    },
+    "8": {
+      "name": "8px"
+    }
+  },
+  "colorDialogTitle": "编辑颜色",
+  "rgbFields": [
+    {
+      "automationId": "706",
+      "role": "Edit"
+    },
+    {
+      "automationId": "707",
+      "role": "Edit"
+    },
+    {
+      "automationId": "708",
+      "role": "Edit"
+    }
+  ],
+  "colorConfirm": {
+    "automationId": "1",
+    "role": "Button"
+  },
+  "brushes": {
+    "brush": {
+      "name": "刷子",
+      "role": "ListItem"
+    },
+    "calligraphy1": {
+      "name": "书法笔刷 1",
+      "role": "ListItem"
+    },
+    "calligraphy2": {
+      "name": "书法笔刷 2",
+      "role": "ListItem"
+    },
+    "airbrush": {
+      "name": "喷枪",
+      "role": "ListItem"
+    },
+    "oil": {
+      "name": "颜料刷",
+      "role": "ListItem"
+    },
+    "crayon": {
+      "name": "蜡笔",
+      "role": "ListItem"
+    },
+    "marker": {
+      "name": "记号笔",
+      "role": "ListItem"
+    },
+    "pencil": {
+      "name": "普通铅笔",
+      "role": "ListItem"
+    },
+    "watercolor": {
+      "name": "水彩笔刷",
+      "role": "ListItem"
+    }
+  },
+  "save": {
+    "fileName": {
+      "automationId": "1001",
+      "role": "Edit"
+    },
+    "confirm": {
+      "automationId": "1",
+      "role": "Button"
+    }
+  },
+  "textEditor": {
+    "automationId": "114",
+    "role": "Document"
+  },
+  "homeTab": {
+    "name": "主页",
+    "role": "TabItem"
+  },
+  "description": "经典简体中文 Paint；通过进程、窗口类、工具栏和 100% 缩放控件确认。",
+  "coordinates": "画布左上角为 [0,0]，画布像素；要求 100% 缩放、未滚动画布。fill/stroke 省略则沿用工具当前设置；fill:null 表示不填充。",
+  "match": {
+    "executable": "mspaint.exe",
+    "className": "MSPaintApp",
+    "requiredSelectors": [
+      "zoom",
+      "canvas",
+      "ellipse",
+      "primary",
+      "secondary",
+      "editColors",
+      "brushMenu"
+    ]
+  },
+  "actions": [
+    {
+      "action": "drawing.drawCircle",
+      "description": "圆形",
+      "example": {
+        "action": "drawing.drawCircle",
+        "args": {
+          "center": [
+            80,
+            80
+          ],
+          "radius": 24,
+          "stroke": {
+            "color": [
+              35,
+              40,
+              55
+            ],
+            "width": 1
+          },
+          "fill": [
+            255,
+            80,
+            70
+          ]
+        }
+      }
+    },
+    {
+      "action": "drawing.drawEllipse",
+      "description": "椭圆",
+      "example": {
+        "action": "drawing.drawEllipse",
+        "args": {
+          "position": [
+            30,
+            40
+          ],
+          "size": [
+            80,
+            40
+          ],
+          "stroke": {
+            "color": [
+              35,
+              40,
+              55
+            ],
+            "width": 1
+          },
+          "fill": [
+            255,
+            80,
+            70
+          ]
+        }
+      }
+    },
+    {
+      "action": "drawing.drawRectangle",
+      "description": "矩形",
+      "example": {
+        "action": "drawing.drawRectangle",
+        "args": {
+          "position": [
+            30,
+            40
+          ],
+          "size": [
+            80,
+            40
+          ],
+          "stroke": {
+            "color": [
+              35,
+              40,
+              55
+            ],
+            "width": 1
+          },
+          "fill": [
+            255,
+            80,
+            70
+          ]
+        }
+      }
+    },
+    {
+      "action": "drawing.drawRoundedRectangle",
+      "description": "圆角矩形",
+      "example": {
+        "action": "drawing.drawRoundedRectangle",
+        "args": {
+          "position": [
+            30,
+            40
+          ],
+          "size": [
+            80,
+            40
+          ],
+          "stroke": {
+            "color": [
+              35,
+              40,
+              55
+            ],
+            "width": 1
+          },
+          "fill": [
+            255,
+            80,
+            70
+          ]
+        }
+      }
+    },
+    {
+      "action": "drawing.drawLine",
+      "description": "直线",
+      "example": {
+        "action": "drawing.drawLine",
+        "args": {
+          "from": [
+            20,
+            20
+          ],
+          "to": [
+            80,
+            60
+          ],
+          "stroke": {
+            "color": [
+              35,
+              40,
+              55
+            ],
+            "width": 1
+          }
+        }
+      }
+    },
+    {
+      "action": "drawing.drawPolygon",
+      "description": "多边形，自动闭合",
+      "example": {
+        "action": "drawing.drawPolygon",
+        "args": {
+          "points": [
+            [
+              50,
+              20
+            ],
+            [
+              80,
+              80
+            ],
+            [
+              20,
+              80
+            ]
+          ],
+          "stroke": {
+            "color": [
+              35,
+              40,
+              55
+            ],
+            "width": 1
+          },
+          "fill": [
+            255,
+            80,
+            70
+          ]
+        }
+      }
+    },
+    {
+      "action": "drawing.drawPolyline",
+      "description": "连续画笔路径，一次按下移动松开；2–4095 个画布坐标点，可选 closed:true 闭合。使用普通刷子，省略 stroke 沿用当前颜色/粗细。",
+      "example": {
+        "action": "drawing.drawPolyline",
+        "args": {
+          "points": [
+            [
+              20,
+              20
+            ],
+            [
+              60,
+              50
+            ],
+            [
+              100,
+              20
+            ]
+          ],
+          "stroke": {
+            "color": [
+              30,
+              30,
+              30
+            ],
+            "width": 1
+          }
+        }
+      }
+    },
+    {
+      "action": "drawing.drawText",
+      "description": "文字，沿用应用字体设置",
+      "example": {
+        "action": "drawing.drawText",
+        "args": {
+          "position": [
+            20,
+            20
+          ],
+          "size": [
+            240,
+            70
+          ],
+          "text": "Hello",
+          "stroke": {
+            "color": [
+              30,
+              30,
+              30
+            ]
+          }
+        }
+      }
+    },
+    {
+      "action": "drawing.selectBrush",
+      "description": "选择刷子",
+      "example": {
+        "action": "drawing.selectBrush",
+        "args": {
+          "brush": "watercolor"
+        }
+      }
+    },
+    {
+      "action": "document.saveAs",
+      "description": "另存为新的 PNG 文件",
+      "example": {
+        "action": "document.saveAs",
+        "args": {
+          "path": "C:/Pictures/new-drawing.png",
+          "format": "png",
+          "overwrite": false
+        }
+      }
+    }
+  ],
+  "supportedDpi": [
+    96,
+    144
+  ]
+}

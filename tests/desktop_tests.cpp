@@ -8,7 +8,11 @@
 namespace {
 HWND edit = nullptr, status = nullptr;
 std::atomic<int> invocations = 0;
+std::atomic<int> pathDowns = 0, pathMoves = 0, pathUps = 0;
 LRESULT CALLBACK window_proc(HWND h, UINT message, WPARAM w, LPARAM l) {
+    if (message == WM_LBUTTONDOWN) ++pathDowns;
+    if (message == WM_MOUSEMOVE && (w & MK_LBUTTON)) ++pathMoves;
+    if (message == WM_LBUTTONUP) ++pathUps;
     if (message == WM_COMMAND && LOWORD(w) == 102) {
         ++invocations;
         SetWindowTextW(status, L"Created once");
@@ -23,6 +27,37 @@ LRESULT CALLBACK window_proc(HWND h, UINT message, WPARAM w, LPARAM l) {
 void require(bool value, const char *message) {
     if (!value)
         throw std::runtime_error(message);
+}
+void verify_path(dp::Service& d, const dp::Json& w, HWND window) {
+    d.execute("window.activate", {{"windowRef",w}});
+            const auto downBefore = pathDowns.load(), moveBefore = pathMoves.load(), upBefore = pathUps.load();
+            d.execute("input.move", {{"windowRef",w},{"coordinateSpace","client_relative"},
+                {"points",dp::Json::array({dp::Json::array({400,170}),dp::Json::array({420,180}),dp::Json::array({440,170})})},{"hold","left"}});
+            for(int i=0;i<50 && pathUps.load()==upBefore;++i)std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            require(pathDowns==downBefore+1 && pathMoves>=moveBefore+2 && pathUps==upBefore+1,
+                    "Continuous path lost held move events or did not release button");
+            require(!(GetAsyncKeyState(VK_LBUTTON)&0x8000),"Continuous path left mouse pressed");
+    POINT expected{440,170}, actual{};
+    ClientToScreen(window,&expected); GetCursorPos(&actual);
+    require(abs(actual.x-expected.x)<=2 && abs(actual.y-expected.y)<=2,"Path endpoint uses wrong coordinate space");
+    const auto noPressBefore = pathDowns.load();
+    d.execute("input.move", {{"windowRef",w},{"coordinateSpace","client_relative"},
+        {"points",dp::Json::array({dp::Json::array({410,175}),dp::Json::array({430,180})})}});
+    expected={430,180};ClientToScreen(window,&expected);
+    // SendInput queues events; wait for the OS cursor to reach the final point.
+    for(int i=0;i<50;++i) {
+        GetCursorPos(&actual);
+        if(abs(actual.x-expected.x)<=2 && abs(actual.y-expected.y)<=2)break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    require(abs(actual.x-expected.x)<=2 && abs(actual.y-expected.y)<=2,"Unheld path endpoint incorrect");
+    require(pathDowns==noPressBefore && !(GetAsyncKeyState(VK_LBUTTON)&0x8000),"Unheld path pressed a button");
+    bool rejected=false;
+    try {
+        d.execute("input.move", {{"windowRef",w},{"coordinateSpace","client_relative"},
+            {"points",dp::Json::array({dp::Json::array({400,170}),dp::Json::array({9999,170})})},{"hold","left"}});
+    } catch(const std::exception& e) { rejected=std::string(e.what()).find("outside target bounds")!=std::string::npos; }
+    require(rejected && pathDowns==noPressBefore && !(GetAsyncKeyState(VK_LBUTTON)&0x8000),"Invalid path dispatched input before full validation");
 }
 } // namespace
 int wmain(int argc, wchar_t **argv) {
@@ -46,6 +81,7 @@ int wmain(int argc, wchar_t **argv) {
                              reinterpret_cast<HMENU>(103), c.hInstance, nullptr);
     ShowWindow(window, SW_SHOWNOACTIVATE);
     UpdateWindow(window);
+    HWND interruption=CreateWindowExW(WS_EX_TOOLWINDOW,c.lpszClassName,L"DesktopPilot Interruption Fixture",WS_OVERLAPPEDWINDOW,650,80,400,260,nullptr,nullptr,c.hInstance,nullptr);
     std::atomic<bool> done = false;
     int exit_code = 0;
     std::thread test([&] {
@@ -60,6 +96,34 @@ int wmain(int argc, wchar_t **argv) {
             require(windows.size() == 1, "fixture window not unique");
             auto w = windows[0]["windowRef"];
             auto before = windows[0]["bounds"];
+            if(argc==2 && std::wstring(argv[1])==L"--routing-only") {
+                auto button=d.execute("ui.find",{{"windowRef",w},{"selector",{{"role","Button"},{"name","Create"}}}})["uniqueRef"];
+                require(!button.is_null(),"fixture button missing");
+                ShowWindow(interruption,SW_SHOW);
+                auto others=d.execute("window.list",{{"pid",GetCurrentProcessId()},{"titleContains","Interruption Fixture"}})["windows"];
+                auto popup=others[0]["windowRef"];d.execute("window.activate",{{"windowRef",popup}});
+                POINT cursorBefore{},cursorAfter{};GetCursorPos(&cursorBefore);
+                auto direct=d.execute("ui.click",{{"windowRef",w},{"elementRef",button}});
+                for(int i=0;i<50&&!invocations.load();++i)Sleep(10);
+                GetCursorPos(&cursorAfter);
+                require(invocations==1&&direct["methodUsed"]=="uia.Invoke","direct control invocation failed");
+                require(cursorBefore.x==cursorAfter.x&&cursorBefore.y==cursorAfter.y,"UIA click moved global cursor");
+                d.execute("window.activate",{{"windowRef",popup}});
+                auto prior=pathUps.load();
+                d.execute("input.click",{{"windowRef",w},{"coordinateSpace","client_relative"},{"x",400},{"y",170},{"autoActivate",true}});
+                for(int i=0;i<50&&pathUps.load()==prior;++i)Sleep(10);
+                require(GetForegroundWindow()==window&&pathUps==prior+1,"focus theft was not recovered before input");
+                EnableWindow(window,FALSE);bool blocked=false;
+                try{d.execute("input.click",{{"windowRef",w},{"coordinateSpace","client_relative"},{"x",400},{"y",170},{"autoActivate",true}});}catch(...){blocked=true;}
+                EnableWindow(window,TRUE);require(blocked,"disabled modal target accepted input");
+                std::cout<<"PASS: direct UIA invocation without cursor move; focus recovery; modal blocked\n";
+                done=true;PostMessageW(window,WM_NULL,0,0);return;
+            }
+            if(argc==2 && std::wstring(argv[1])==L"--path-only") {
+                verify_path(d,w,window);
+                std::cout << "PASS: held path, unheld path, relative endpoints, release, invalid later point before input\n";
+                done=true;PostMessageW(window,WM_NULL,0,0);return;
+            }
             auto found = d.execute("ui.find", {{"windowRef", w}, {"selector", {{"role", "Edit"}}}});
             require(!found["uniqueRef"].is_null(), "Edit not unique");
             auto e = found["uniqueRef"];
@@ -173,6 +237,7 @@ int wmain(int argc, wchar_t **argv) {
                 require(abs(actual.x - expected.x) <= 2 && abs(actual.y - expected.y) <= 2,
                         "Relative input did not follow moved window");
             }
+            verify_path(d, w, window);
             auto rejected = [&](const dp::Json &args, const std::string &reason) {
                 try { d.execute("input.move", args); } catch (const std::exception &e) {
                     return std::string(e.what()).find(reason) != std::string::npos;
@@ -185,6 +250,10 @@ int wmain(int argc, wchar_t **argv) {
             auto outside = relative;
             outside["x"] = -1;
             require(rejected(outside, "outside target bounds"), "Out-of-bounds relative input accepted");
+            require(rejected({{"windowRef",w},{"coordinateSpace","client_relative"},
+                {"points",dp::Json::array({dp::Json::array({400,170}),dp::Json::array({9999,170})})},{"hold","left"}},
+                "outside target bounds"),"Invalid later path point accepted");
+            require(!(GetAsyncKeyState(VK_LBUTTON)&0x8000),"Invalid path pressed button before validation");
             EnableWindow(window, FALSE);
             require(rejected(relative, "input_target_unavailable"), "Modal-disabled target accepted input");
             EnableWindow(window, TRUE);
@@ -211,6 +280,7 @@ int wmain(int argc, wchar_t **argv) {
         MsgWaitForMultipleObjects(0, nullptr, FALSE, 20, QS_ALLINPUT);
     }
     test.join();
+    DestroyWindow(interruption);
     DestroyWindow(window);
     return exit_code;
 }

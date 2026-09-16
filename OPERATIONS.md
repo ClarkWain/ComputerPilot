@@ -1,6 +1,6 @@
-# DesktopPilot 0.3 操作参考
+# 原生 JSONL 开发操作参考
 
-MCP 调用参数为 `{operation, args}`。JSONL 为 `{id, operation, args}`。实际支持项以 `runtime.capabilities` 为准。以下参数使用 JSON 类型；标记可选的字段可省略。
+这里是开发者使用的原生 JSONL 协议 `{id, operation, args}`，不是 MCP 工具。日常 Agent 使用 [四工具 MCP](docs/MCP.md)。实际支持项以 `runtime.capabilities` 为准。以下参数使用 JSON 类型；标记可选的字段可省略。
 
 | 操作 | args |
 |---|---|
@@ -42,25 +42,13 @@ MCP 调用参数为 `{operation, args}`。JSONL 为 `{id, operation, args}`。�
 
 ## 回执、超时与取消
 
-写操作可在 args 内携带 `requestId`；MCP `computer_act` 也接受顶层 `requestId`。同一会话内、相同参数的重复请求返回缓存回执。相同 ID 配不同参数返回冲突。通过父进程保存的回执，工作进程超时或重启后也不会自动重发已知 ID。父服务重启后缓存不保留，不承诺持久 exactly-once。
+写操作可在 args 内携带 `requestId`。同一会话内、相同参数的重复请求返回缓存回执。相同 ID 配不同参数返回冲突。通过父进程保存的回执，工作进程超时或重启后也不会自动重发已知 ID。父服务重启后缓存不保留，不承诺持久 exactly-once。
 
 MCP 服务将原生/UIA/推理工作放入独立子进程，默认单次 provider 调用 60 秒。args 可设置 `providerTimeoutMs:1..600000`。超时或硬取消会终止子进程，使该工作进程所有引用失效；下一次调用按需启动新进程。已经发生的系统输入或外部提交不可回滚，未知结果需先观察。
 
-可通过 MCP `notifications/cancelled` 的 `params.requestId` 取消 RPC 请求，或调用 `computer_runtime`：
+MCP 取消使用标准 notifications/cancelled，params.requestId 指向 RPC 编号；不再提供取消工具。JSONL 直接执行同步后端，不启用 MCP 工作进程监督。
 
-```json
-{"operation":"runtime.cancel","args":{"id":123}}
-```
-
-这里的 id 是 MCP RPC id；`action.status.args.id` 则是应用层去重 requestId，二者不要混用。等待或 provider 阻塞期间 ping/取消入口保持响应。JSONL 模式直接调用同步后端，不启用外层工作进程监督。
-
-## 批量和等待
-
-`computer_batch` 的 `steps` 包含可选 `id`、`operation` 和 `args`。`{fromStep:"步骤ID",path:"/result/uniqueRef"}` 采用 JSON Pointer，引用必须指向前面已完成的步骤。失败停止，不回滚，不忽略缺失依赖。
-
-`computer_wait` 参数为 `operation,args?,pointer,equals,timeoutMs?,output?`。它在当前请求内轮询，只允许只读操作；provider 调用本身另受 providerTimeoutMs 限制。默认 output:all 保留最后一次结果；output:summary 仅返回 status、matched、polls、elapsedMs，成功和超时都不回显字段内容。不要在后续 fromStep 引用 summary 模式不存在的 result。不把超时当作动作未发生。
-
-`computer_batch` 可选 metrics:true，返回总 elapsedMs 及逐步 beforeDispatchMs、dispatchMs；异常步骤返回 failed 和 elapsedMs。beforeDispatchMs 包括引用解析和显式 delayMs；dispatchMs 包括 worker 通信、操作执行或条件轮询。服务外部审批、调度和模型推理耗时不可在此测得。默认不返回 metrics，避免增加日常 token；output:last 下仍保留显式请求的 metrics，失败仍保留错误详情。
+MCP 批量语义和基础输入分别见 [应用语义](docs/SEMANTIC-PROFILES.md) 与 [批次可靠性](BATCH-RELIABILITY.md)。原生 JSONL 每条消息仍是一个 operation。
 
 ## 紧凑查询与连续事件
 
@@ -73,38 +61,6 @@ MCP 服务将原生/UIA/推理工作放入独立子进程，默认单次 provide
 - `stopReason`：complete / limit / nodeBudget / timeout / providerError；complete 只表示给定 depth 范围内完成，不代表整个应用树。
 
 先轻量筛选控件，再按需读取匹配结果的模式和点击点。查询保持原遍历顺序，不自动使用缓存的旧页面内容。
-
-`computer_batch` 每步可设置 `delayMs`（0..60000 毫秒，执行该步前等待）。默认无间隔。一次调用发送点击、输入、回车，例如：
-
-```json
-{
-  "output": "last",
-  "steps": [
-    {"operation":"input.click","args":{"x":1980,"y":220}},
-    {"delayMs":100,"operation":"input.type_text","args":{"text":"像素画"}},
-    {"delayMs":100,"operation":"input.key_chord","args":{"keys":["ENTER"]}}
-  ]
-}
-```
-
-示例坐标来自先前观测，使用时必须换成当前目标的位置。output 默认 all；last 仅在成功时返回末步结果，失败仍保留执行记录。动作返回成功只表示派发，不保证页面加载完成。
-
-在 steps 中插入条件等待，再执行截图，可以避免截图过早：
-
-```json
-{
-  "tool":"computer_wait",
-  "arguments":{
-    "operation":"window.get",
-    "args":{"windowRef":"本会话窗口引用"},
-    "pointer":"/foreground",
-    "equals":true,
-    "timeoutMs":3000
-  }
-}
-```
-
-条件也可检查 ui.find 返回的完整匹配结果。等待超时会停止后续步骤。间隔期间支持取消，不回滚已执行动作；单个步骤的 requestId 放在 args 中。批量事件由 MCP computer_batch 提供，JSONL 仍是单操作协议。
 
 生产接入直接启动 `desktop-pilot.exe serve`，通过 UTF-8 标准输入输出保持连接；无需 Node，也不建议套 PTY，以免回显、控制字符和中文编码干扰。已有 mcp.json 是连接示例，不表示已经安装到当前 Agent。
 
@@ -144,7 +100,7 @@ ui.context_menu 使用 IUIAutomationElement3.ShowContextMenu，只报告调用�
 
 ## 会话诊断与编辑消息补齐
 
-system.session 是只读操作，返回当前进程 sessionId、WTS lockState（locked/unlocked/unknown）、connectionState 数值、threadDesktop、inputDesktop、inputDesktopAccessible 和 threadOnInputDesktop（boolean/null）。失败保留 Win32 errors；不把访问被拒绝推断为锁定。WTS 锁定标志按 Windows 10/11 语义解释，本项目不支持 Windows 7 的反向标志。此操作只提供状态，不自动拦截其他操作，也不切换、解锁桌面。threadOnInputDesktop 来自 UOI_IO；不是 SendInput/UIA/浏览器必然成功的承诺。可通过 computer_query 或 computer_wait 调用。
+system.session 是只读操作，返回当前进程 sessionId、WTS lockState（locked/unlocked/unknown）、connectionState 数值、threadDesktop、inputDesktop、inputDesktopAccessible 和 threadOnInputDesktop（boolean/null）。失败保留 Win32 errors；不把访问被拒绝推断为锁定。WTS 锁定标志按 Windows 10/11 语义解释，本项目不支持 Windows 7 的反向标志。此操作只提供状态，不自动拦截其他操作，也不切换、解锁桌面。threadOnInputDesktop 来自 UOI_IO；不是 SendInput/UIA/浏览器必然成功的承诺。可通过原生 JSONL 查询，MCP 自动执行环境检查。
 
 ui.message_text 的 Backspace 和 Enter 现在按 WM_KEYDOWN → WM_CHAR（退格 8 / 回车 13）→ WM_KEYUP 派发。同步发送不经过目标消息循环的 TranslateMessage，所以显式补齐字符消息；即使前面派发失败也尝试释放键。expectedSuffix 可选：操作前全文回读若不以它结尾，则不发送输入；它不是跨进程原子锁。仍必须看最终 verification，不能按已发送计数判断成功。
 
@@ -155,4 +111,19 @@ ui.message_text 的 Backspace 和 Enter 现在按 WM_KEYDOWN → WM_CHAR（退�
 
 ## 窗口绑定与条件批次
 
-`input.*` 可携带 windowRef，以及 coordinateSpace:window_relative/client_relative 和 expectedSize。`computer_batch` 支持 inputDefaults、before/after、output:summary。参见 [组合命令可靠性](BATCH-RELIABILITY.md)。
+`input.*` 可携带 windowRef，以及 coordinateSpace:window_relative/client_relative 和 expectedSize。MCP execute_batch 自动绑定窗口并检查观察状态。参见 [组合命令可靠性](BATCH-RELIABILITY.md)。
+
+诊断补充：system.session 返回实际工作进程的 processId、windowStation、integrityRid、restrictedToken、uiAccess、inJob，以及可查询时的 jobUiRestrictions。字段缺失表示查询未得到结果，不等同于零限制。SendInput 失败现在保留即时 Win32 错误码；访问拒绝不能单独证明 UIPI、锁屏或输入阻塞。
+
+线程诊断补充：threadImpersonating 表示是否存在模拟令牌；desktopGrantedAccess 和 windowStationGrantedAccess 是只读查询得到的句柄访问掩码，不修改权限。即使这些检查正常，也必须以实际输入结果为准，不能把 SendInput 的拒绝直接归因于权限不足。
+
+性能查询：ui.tree/ui.find 的 format:locator 保留 name、automationId、role、bounds 等定位属性，跳过 Pattern 枚举、ClickablePoint 与 ValuePattern 读取；supportedPatterns 空数组、value:null 在此模式下表示未查询。ui.get 可设 details:false 跳过详细查询，默认 true 保持兼容。文本回读仍使用默认详细模式。
+
+`system.session.lastInputTick` 为 GetLastInputInfo 成功时返回的最近输入时间戳（毫秒、32 位计数，包含合成输入）。可用于比较相邻步骤间输入是否变化；缺失代表查询失败，不作为连续的人为干预检测。
+
+语义动作新增 drawing.drawText、drawing.selectBrush、document.saveAs；开发协议通过 semantic.perform，MCP 通过 execute_semantic 调用。参数和限制见 docs/SEMANTIC-PROFILES.md。input.key_chord 新增 F12（保存为）。
+# 启动前提与诊断
+
+**同一 Windows 用户会话、同一输入桌面、可用执行令牌是桌面操作前提。** 先 `system.preflight`，`ready:false` 时不要发 UI 输入。`doctor` 提供独立 CLI 诊断；MCP 初始化与能力发现也会返回实际 worker 的诊断。
+
+`system.preflight` 无参数，返回 `ready/status/attentionRequired/code/reasons/session/message/nextAction`。桌面错位、锁屏、输入桌面不可访问、Session 0、受限令牌、作业 UI 限制或关键证据缺失都会提示未就绪。MCP/jsonl 桌面操作会停止在派发前，返回 `desktop_environment_not_ready`；诊断调用仍允许。不要把派发成功当作执行成功。详见 [MCP](docs/MCP.md) 和 [故障处理](skills/desktoppilot/references/troubleshooting.md)。

@@ -1,6 +1,6 @@
 # 协议与执行语义
 
-DesktopPilot 提供三种入口：C++ 同步库、MCP JSON-RPC 2.0 stdio、原生 JSONL。操作参数以运行时 capabilities/describe 和 OPERATIONS.md 为准。
+DesktopPilot 提供三种入口：C++ 同步库、MCP JSON-RPC 2.0 stdio、原生 JSONL。日常 MCP 只有四个工具，见 [MCP.md](MCP.md)。下文主要描述原生开发协议，其操作参数以 capabilities/describe 和 OPERATIONS.md 为准。
 
 ## JSONL
 
@@ -21,14 +21,14 @@ DesktopPilot 提供三种入口：C++ 同步库、MCP JSON-RPC 2.0 stdio、原�
 
 ## 完成、失败和去重
 
-派发成功不代表业务完成。检查 status、verification 和任务对应的业务状态。unknown 不能当作未执行。批次并非事务，失败停止但不回滚；after 条件失败意味着动作可能已经生效。
+派发成功不代表业务完成。检查 status、verification 和任务对应的业务状态。unknown 不能当作未执行。批次并非事务，失败停止但不回滚；失败项可能已经生效。
 
 同一会话中，相同 requestId 与相同参数返回缓存回执；不同参数复用 ID 返回冲突。action.status 查询该 ID。父服务重启不保留缓存，不承诺持久 exactly-once。
 
 ## 超时与取消
 
-MCP 的 provider 默认超时 60 秒，可用 providerTimeoutMs 调整。硬超时/取消可能终止工作进程，已经发生的输入不可回滚。notifications/cancelled 的 requestId 指 JSON-RPC 请求 ID；action.status 的 id 指动作去重 ID，两者不同。
+MCP 单次基础 provider 默认超时 60 秒；语义执行配置为 600 秒。开发协议可用 providerTimeoutMs 调整。硬超时/取消可能终止工作进程，已经发生的输入不可回滚。notifications/cancelled 的 requestId 指 JSON-RPC 请求 ID；action.status 的 id 指动作去重 ID，两者不同。
 
 ## 输出
 
-浮点数序列化最多四位小数并去尾零，不修改内部存储精度。它不是无损浮点传输协议。紧凑 UI 查询保留必要字段；批次 summary 成功只返回状态与完成数量，失败保留步骤、阶段和分发尝试信息。可选 metrics 记录原生耗时，不代表 agent 总时长或 token 数。
+浮点数序列化最多四位小数并去尾零，不修改内部存储精度。它不是无损浮点传输协议。紧凑 UI 查询保留必要字段；批次默认返回完成摘要，失败保留步骤、阶段和分发尝试信息。原生 metrics 记录执行耗时，不代表 agent 总时长或 token 数。

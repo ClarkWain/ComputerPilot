@@ -27,6 +27,9 @@ std::vector<Detection> nms(std::vector<Detection> candidates, float threshold, s
 std::vector<float> preprocess(const Image& image, const Letterbox& layout);
 Image load_image(const std::filesystem::path& path);
 void save_png(const Image& image, const std::filesystem::path& path);
+bool webp_available();
+void save_webp(const Image& image, const std::filesystem::path& path, bool lossless=false);
+Image resize_image(const Image& image, int max_edge);
 Image draw_overlay(const Image& image, std::span<const Detection> detections);
 Image make_fixture();
 std::string utf8(std::wstring_view text);

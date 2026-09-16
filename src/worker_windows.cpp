@@ -43,6 +43,10 @@ struct Worker::Impl {
         std::wstring command = L"\"" + executable + L"\" jsonl";
         STARTUPINFOW startup{};
         startup.cb = sizeof(startup);
+        // Bind each fresh worker to the interactive desktop instead of inheriting
+        // a stale desktop association from a long-running launcher.
+        wchar_t desktop[] = L"winsta0\\default";
+        startup.lpDesktop = desktop;
         startup.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
         startup.wShowWindow = SW_HIDE;
         startup.hStdInput = read_input;

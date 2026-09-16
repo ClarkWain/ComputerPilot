@@ -1,63 +1,31 @@
-# 组合命令：绑定窗口、内部核验、精简回执
+# 批次：减少逐步介入，保留结果验收
 
-## 推荐调用方式
-
-`computer_batch` 保持顺序执行。将窗口绑定和坐标系放入 `inputDefaults`，避免每步重复发送。先用当前会话返回的唯一 `windowRef` 激活目标，再执行输入批次。
+有匹配 profile 时优先 `execute_semantic`，由应用适配器处理控件、颜色和等待。没有适用语义时，`execute_batch` 一次提交稳定的基础动作序列。两者都只返回最终完成或失败结果，不需要 Agent 逐步轮询。
 
 ```json
-{
-  "output": "summary",
-  "inputDefaults": {
-    "windowRef": "<当前会话返回的目标窗口引用>",
-    "coordinateSpace": "client_relative",
-    "expectedSize": {"width": 1505, "height": 1080}
-  },
-  "steps": [
-    {"id": "focus", "operation": "input.click", "args": {"x": 100, "y": 200}},
-    {"id": "type", "delayMs": 100, "operation": "input.type_text", "args": {"text": "示例"}},
-    {"id": "submit", "operation": "input.key_chord", "args": {"keys": ["ENTER"]}}
-  ]
-}
+{"window_id":"实际窗口ID","actions":[
+  {"type":"click","point":{"x":100,"y":200}},
+  {"type":"type_text","text":"示例","delay_ms":100},
+  {"type":"press_keys","chord":"Enter"}
+]}
 ```
 
-坐标和尺寸必须来自实际观察；示例数字不能直接套用。`expectedSize` 是整个窗口的物理像素尺寸，即使坐标使用客户区原点。步骤自己的参数覆盖 `inputDefaults`，非 `input.*` 操作不使用这些默认值。默认值可使用已有的 `fromStep` 引用格式。
+这是 execute_batch 参数。坐标来自最近 get_window_state，基于窗口左上角的物理像素。delay_ms 是动作前的可选等待，默认 0；稳定本地界面无需额外停顿。字段替换优先 fill_text，让程序回读确认。
 
-## 原生窗口检查
+## 程序承担的检查
 
-- `window_relative`：以实时窗口左上角为原点；`client_relative`：以实时客户区左上角为原点，均为物理像素。
-- 携带 `windowRef` 的输入在执行前检查目标仍存在、可见、未最小化、未被禁用且处于前台。
-- 鼠标起点与拖动终点必须落在目标窗口上，避免点击遮挡窗口。
-- 窗口移动后重新计算原点；提供 `expectedSize` 时，尺寸改变立即报错，要求重新观察布局。
-- 不自动夺回焦点。弹窗需要观察并绑定其自身窗口；主窗口引用不能代替弹窗引用。
-- 不携带窗口引用的旧式屏幕输入保持兼容，但不享受目标窗口检查。
+- 一次批次预先验证所有参数；执行时逐项恢复目标焦点。
+- 原生输入再次检查窗口、尺寸和遮挡；参数错误不开始批次，运行中失败停止。
+- 控件和窗口位置改变时返回错误，要求重新获取状态；模态弹窗返回其窗口标识。
+- 内部维护观察状态，不向 Agent 暴露状态编号。已消费观察不能再次执行。
+- 语义批次复用已确认的控件与工具样式，介入或界面变化时失效重查。
 
-这些是执行前检查，并非操作系统级原子事务。检查后发生窗口切换仍存在竞争窗口；起点和终点检查也不代表完整拖动路径经过的每个像素均已检查。
+这些检查不是操作系统级事务；输入发出后仍需核验实际结果。未观察的新页面、弹窗不应靠旧坐标跨越。
 
-## 在程序内部验证前后条件
+## 回执与恢复
 
-每步可加入 `before`、`after`，使用只读操作、JSON Pointer 和期望值。默认只查一次；设置 `timeoutMs` 时内部轮询，无需 agent 反复调用。
+成功返回 completed，填写字段还返回 fieldsVerified。失败给出 failedIndex 和 error/failure，语义失败尽量附带局部截图。失败不回滚，未知结果不等于尚未发生；重新观察后只处理未完成部分。
 
-```json
-{
-  "id": "setTitle",
-  "operation": "ui.set_value",
-  "args": {"elementRef": "<标题框引用>", "value": "远航"},
-  "after": {
-    "operation": "ui.get",
-    "args": {"elementRef": "<标题框引用>"},
-    "pointer": "/value",
-    "equals": "远航",
-    "timeoutMs": 1000
-  }
-}
-```
+MCP 不再提供第二套通用注册表批处理、fromStep、before/after 或独立等待工具。具体应用的条件检查应放在 profile 的原生适配器中。不要在四工具之上再让 Agent 学习一套流程语言。
 
-条件失败立即停止，不执行后续步骤，不自动重试已经尝试的动作。`after` 失败不回滚动作。对于文本表单，优先使用已有的 `ui.fill_form`，由原生实现完成填写和验证。
-
-## 回执与 token
-
-新增 `output:summary`，成功仅返回 `status` 和 `completed`。失败返回 `failedStep`、`phase`、`dispatchAttempted` 与错误，不返回此前成功步骤的全部内容。`completed` 只计入动作及其后置条件均成功的步骤。
-
-`dispatchAttempted:true` 只表示调用过动作分发，并不证明系统已接受输入或业务操作已完成；重试前应观察实际状态。保留 `output:all/last` 的兼容行为。`metrics:true` 仍按需返回逐步耗时，不适合作为低 token 默认值。
-
-2026-09-15 验证：MCP 协议、文件传输、原生测试窗口三组回归通过，包括窗口移动跟随、尺寸不符、越界坐标、禁用窗口、前后条件失败与精简回执。未据此宣称 真实应用任务成功率已有提升，后续需要任务级对照测试。
+详细参数见 [Agent API](docs/AGENT-API.md)，应用语义见 [Profiles](docs/SEMANTIC-PROFILES.md)。

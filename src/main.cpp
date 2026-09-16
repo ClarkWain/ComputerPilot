@@ -1,6 +1,8 @@
 #include <desktop_pilot/detector.hpp>
 #include <desktop_pilot/ocr.hpp>
 #include <desktop_pilot/desktop.hpp>
+#include <desktop_pilot/service.hpp>
+#include <desktop_pilot/agent_api.hpp>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -43,7 +45,7 @@ int integer(const Options& args,const std::wstring& key,int fallback,int min,int
     return int(v);
 }
 Json capabilities() {
-    return {{"name","DesktopPilot"},{"version","0.3.0"},{"transport","cli"},{"pythonRequired",false},
+    return {{"name","DesktopPilot"},{"version","0.4.0"},{"transport","cli"},{"pythonRequired",false},
         {"operations",{{"image.decode",true},{"image.fixture",true},{"vision.detect",Detector::available()},
         {"vision.overlay",true},{"vision.ocr",Ocr::available()},{"vision.textAssociation",true},{"ui.fusion",true},{"desktop.capture",true},{"input.click",true},{"mcp",true}}}};
 }
@@ -57,9 +59,19 @@ int wmain(int argc,wchar_t** argv) {
                 "        [--size 640] [--confidence 0.25] [--iou 0.7] [--threads 4] [--max-detections 300]\n"
                 "        [--ocr-models DIR] [--ocr-max-side 960] [--text-threshold 0.5]\n"
                 "  ocr --image FILE --ocr-models DIR [--output FILE.json] [--overlay FILE.png]\n"
-                "  serve (MCP stdio)\n  jsonl (native registry)\n"; return 0;
+                "  agent-schema (machine-readable common tool schemas)\n"
+                "  doctor (read-only desktop preflight; exit 3 when not ready)\n"
+                "  serve (MCP stdio) [--input FILE.jsonl --output FILE.jsonl]\n  jsonl (native registry)\n"; return 0;
         }
         std::wstring command=argv[1];
+        if(command==L"agent-schema") {parse_options(argc,argv,{});std::cout<<dump_json(AgentApi::tools(),2)<<'\n';return 0;}
+        if(command==L"doctor") {
+            parse_options(argc,argv,{});
+            Service service;
+            auto result=service.execute("system.preflight",Json::object());
+            std::cout<<dump_json(result,2)<<'\n';
+            return result.value("ready",false)?0:3;
+        }
         if(command==L"serve" || command==L"jsonl") {
             auto args=parse_options(argc,argv,{L"--input",L"--output"});
             std::ifstream input;

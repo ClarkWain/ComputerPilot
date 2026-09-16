@@ -113,10 +113,12 @@ Json receipt(const std::string &method) {
 void send(std::vector<INPUT> &events) {
     if (events.empty())
         return;
+    SetLastError(ERROR_SUCCESS);
     auto n = SendInput(UINT(events.size()), events.data(), sizeof(INPUT));
+    const auto error = GetLastError();
     if (n != events.size())
         throw std::runtime_error(
-            "SendInput incomplete: inserted=" + std::to_string(n) +
+            "SendInput incomplete: inserted=" + std::to_string(n) + "; win32=" + std::to_string(error) +
             "; outcome_unknown; check desktop and process integrity levels before retry");
 }
 void send(std::initializer_list<INPUT> items) { std::vector<INPUT> events(items); send(events); }
@@ -133,10 +135,12 @@ WORD vk(const std::string &s) {
         {"CTRL", VK_CONTROL},  {"SHIFT", VK_SHIFT}, {"ALT", VK_MENU},    {"WIN", VK_LWIN},
         {"ENTER", VK_RETURN},  {"TAB", VK_TAB},     {"ESC", VK_ESCAPE},  {"BACKSPACE", VK_BACK},
         {"DELETE", VK_DELETE}, {"LEFT", VK_LEFT},   {"RIGHT", VK_RIGHT}, {"UP", VK_UP},
-        {"DOWN", VK_DOWN},     {"HOME", VK_HOME},   {"END", VK_END},     {"SPACE", VK_SPACE}};
+        {"DOWN", VK_DOWN},     {"HOME", VK_HOME},   {"END", VK_END},     {"SPACE", VK_SPACE},
+        {"PAGEUP", VK_PRIOR}, {"PAGEDOWN", VK_NEXT}, {"INSERT", VK_INSERT}};
     auto it = m.find(s);
     if (it != m.end())
         return it->second;
+    for(int i=1;i<=12;++i) if(s=="F"+std::to_string(i))return WORD(VK_F1+i-1);
     if (s.size() == 1 && ((s[0] >= 'A' && s[0] <= 'Z') || (s[0] >= '0' && s[0] <= '9')))
         return WORD(s[0]);
     throw std::invalid_argument("Unknown key; use uppercase key names");
@@ -197,15 +201,33 @@ struct Desktop::Impl {
         GetWindowRect(h, &r);
         DWORD pid = 0;
         GetWindowThreadProcessId(h, &pid);
-        return {{"windowRef", window_ref(h)},
+        Json result={{"windowRef", window_ref(h)},
                 {"title", utf8(name)},
                 {"pid", pid},
                 {"hwnd", reinterpret_cast<uintptr_t>(h)},
                 {"bounds", rect(r)},
                 {"visible", bool(IsWindowVisible(h))},
                 {"minimized", bool(IsIconic(h))},
+                {"enabled", bool(IsWindowEnabled(h))},
                 {"foreground", h == GetForegroundWindow()},
                 {"dpi", GetDpiForWindow(h)}};
+        wchar_t className[256]{}; GetClassNameW(h,className,256);
+        result["className"]=utf8(className);
+        if(HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid)) {
+            wchar_t executable[32768]{}; DWORD length=32768;
+            if(QueryFullProcessImageNameW(process,0,executable,&length))
+                result["executable"]=utf8(std::filesystem::path(executable).filename().wstring());
+            CloseHandle(process);
+        }
+        if(!IsWindowEnabled(h)) {
+            HWND popup=GetWindow(h,GW_ENABLEDPOPUP);
+            if(popup && popup!=h && IsWindowVisible(popup) && IsWindowEnabled(popup)) {
+                wchar_t popupTitle[4096]{};GetWindowTextW(popup,popupTitle,4096);
+                DWORD popupPid=0;GetWindowThreadProcessId(popup,&popupPid);
+                result["blockingWindow"]={{"windowRef",window_ref(popup)},{"title",utf8(popupTitle)},{"pid",popupPid}};
+            }
+        }
+        return result;
     }
     ComPtr<IUIAutomationElement> element(const Json &a) {
         ComPtr<IUIAutomationElement> e;
@@ -297,8 +319,8 @@ struct Desktop::Impl {
     Json query(const Json &a) {
         const auto started = std::chrono::steady_clock::now();
         const auto format = a.value("format", std::string("full"));
-        if (format != "full" && format != "compact")
-            throw std::invalid_argument("format must be full or compact");
+        if (format != "full" && format != "compact" && format != "locator")
+            throw std::invalid_argument("format must be full, compact or locator");
         const bool early = a.value("stopAfterLimit", false);
         const int timeout = bounded(a, "queryTimeoutMs", 60000, 1, 600000);
         auto root = element(a);
@@ -343,7 +365,7 @@ struct Desktop::Impl {
                         detail["depth"] = node.depth;
                         detail["parentRef"] = node.parent;
                         row = std::move(detail);
-                    } else {
+                    } else if (format == "compact") {
                         BSTR value = nullptr;
                         ComPtr<IUIAutomationValuePattern> vp;
                         if (SUCCEEDED(node.e->GetCurrentPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&vp))) && vp &&
@@ -425,6 +447,13 @@ struct Desktop::Impl {
             r.bottom = r.top + GetSystemMetrics(SM_CYVIRTUALSCREEN);
         }
         int w = r.right - r.left, h = r.bottom - r.top;
+        const auto window_bounds=rect(r);
+        if(a.contains("region")) {
+            const auto& region=a.at("region");
+            const int x=bounded(region,"x",0,0,w-1), y=bounded(region,"y",0,0,h-1);
+            const int rw=bounded(region,"width",0,1,w-x), rh=bounded(region,"height",0,1,h-y);
+            r.left+=x;r.top+=y;r.right=r.left+rw;r.bottom=r.top+rh;w=rw;h=rh;
+        }
         if (w <= 0 || h <= 0 || int64_t(w) * h > 64000000)
             throw std::invalid_argument("Invalid capture dimensions");
         auto screen = GetDC(nullptr);
@@ -484,12 +513,22 @@ struct Desktop::Impl {
                                      "; win32=" + std::to_string(capture_error) +
                                      "; screen capture requires an available interactive desktop");
         auto output = std::filesystem::path(wide(a.at("output").get<std::string>()));
-        save_png(image, output);
+        std::string originalPath;
+        const int maxEdge=bounded(a,"maxEdge",32000,1,32000);
+        if(std::max(w,h)>maxEdge) {
+            auto original=output;original.replace_extension(L".original.png");save_png(image,original);
+            originalPath=utf8(std::filesystem::absolute(original).wstring());
+            image=resize_image(image,maxEdge);
+        }
+        const bool webp=output.extension()==L".webp";
+        if(webp)save_webp(image,output,a.value("lossless",false));else save_png(image, output);
         return {{"path", utf8(std::filesystem::absolute(output).wstring())},
+                {"originalPath",originalPath}, {"mimeType",webp?"image/webp":"image/png"},
                 {"imageRef", "img-sha256-" + file_sha256(output)},
                 {"bounds", rect(r)},
-                {"width", w},
-                {"height", h},
+                {"windowBounds",window_bounds},
+                {"width", image.width},
+                {"height", image.height},
                 {"method", requested_method == "printWindow" ? "win32.PrintWindow" : "win32.BitBlt"},
                 {"content", requested_method == "printWindow"
                                 ? "application_rendered_window; some GPU applications may render blank"
@@ -504,7 +543,7 @@ Desktop::~Desktop() = default;
 Json Desktop::operations() {
     auto result = Json::parse(
         R"(["system.info","process.list","display.list","window.list","window.get","window.foreground","window.activate","window.move","window.resize","window.minimize","window.maximize","window.restore","window.close","ui.tree","ui.find","ui.get","ui.at_point","ui.text","ui.focus","ui.invoke","ui.set_value","ui.fill","ui.select","ui.toggle","ui.expand","ui.collapse","ui.scroll","ui.set_range_value","capture.desktop","capture.window","capture.region","capture.element","input.move","input.click","input.scroll","input.drag","input.key_chord","input.type_text","clipboard.read","clipboard.write","runtime.capabilities"])");
-    for (auto op : {"app.launch", "capture.display", "ui.selection", "clipboard.formats", "ui.fill_form", "ui.reveal", "window.children", "ui.message_text", "ui.context_menu", "system.session"})
+    for (auto op : {"app.launch", "capture.display", "ui.click", "ui.selection", "clipboard.formats", "ui.fill_form", "ui.reveal", "window.children", "ui.message_text", "ui.context_menu", "system.session"})
         result.push_back(op);
     return result;
 }
@@ -593,6 +632,48 @@ Json Desktop::execute(const std::string &op, const Json &a) {
                     {"inputDesktop", nullptr}, {"inputDesktopAccessible", false},
                     {"threadOnInputDesktop", nullptr}};
         Json errors = Json::object();
+        LASTINPUTINFO lastInput{sizeof(LASTINPUTINFO)};
+        if (GetLastInputInfo(&lastInput)) out["lastInputTick"] = lastInput.dwTime;
+        else errors["lastInputTick"] = GetLastError();
+        out["processId"] = GetCurrentProcessId();
+        HANDLE token = nullptr;
+        if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+            out["restrictedToken"] = IsTokenRestricted(token) != FALSE;
+            DWORD bytes = 0, uiAccess = 0;
+            if (GetTokenInformation(token, TokenUIAccess, &uiAccess, sizeof(uiAccess), &bytes)) out["uiAccess"] = uiAccess;
+            GetTokenInformation(token, TokenIntegrityLevel, nullptr, 0, &bytes);
+            std::vector<BYTE> buffer(bytes);
+            if (bytes && GetTokenInformation(token, TokenIntegrityLevel, buffer.data(), bytes, &bytes)) {
+                auto sid = reinterpret_cast<TOKEN_MANDATORY_LABEL*>(buffer.data())->Label.Sid;
+                out["integrityRid"] = *GetSidSubAuthority(sid, *GetSidSubAuthorityCount(sid)-1);
+            }
+            CloseHandle(token);
+        } else errors["processToken"] = GetLastError();
+        BOOL inJob = FALSE;
+        if (IsProcessInJob(GetCurrentProcess(), nullptr, &inJob)) out["inJob"] = inJob != FALSE;
+        JOBOBJECT_BASIC_UI_RESTRICTIONS restrictions{};
+        if (inJob && QueryInformationJobObject(nullptr, JobObjectBasicUIRestrictions, &restrictions, sizeof(restrictions), nullptr))
+            out["jobUiRestrictions"] = restrictions.UIRestrictionsClass;
+        HANDLE threadToken = nullptr;
+        if (OpenThreadToken(GetCurrentThread(), TOKEN_QUERY, TRUE, &threadToken)) {
+            out["threadImpersonating"] = true;
+            out["threadRestrictedToken"] = IsTokenRestricted(threadToken) != FALSE;
+            CloseHandle(threadToken);
+        } else {
+            const auto error = GetLastError();
+            if (error == ERROR_NO_TOKEN) out["threadImpersonating"] = false;
+            else errors["threadToken"] = error;
+        }
+        // ObjectBasicInformation exposes the access actually granted to a handle.
+        using QueryObject = LONG (WINAPI*)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+        const auto queryObject = reinterpret_cast<QueryObject>(GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryObject"));
+        auto access = [&](HANDLE handle, const char* name) {
+            struct BasicInfo { ULONG attributes; ACCESS_MASK granted; ULONG handleCount; ULONG pointerCount; ULONG reserved[10]; } info{};
+            ULONG bytes = 0;
+            if (queryObject && queryObject(handle, 0, &info, sizeof(info), &bytes) >= 0) out[name] = info.granted;
+        };
+        access(GetProcessWindowStation(), "windowStationGrantedAccess");
+        access(GetThreadDesktop(GetCurrentThreadId()), "desktopGrantedAccess");
         DWORD sessionId = 0;
         if (ProcessIdToSessionId(GetCurrentProcessId(), &sessionId)) {
             out["sessionId"] = sessionId;
@@ -622,7 +703,7 @@ Json Desktop::execute(const std::string &op, const Json &a) {
         } else {
             errors["sessionId"] = GetLastError();
         }
-        auto desktopName = [&](HDESK desktop, const char *key) {
+        auto desktopName = [&](HANDLE desktop, const char *key) {
             DWORD bytes = 0;
             GetUserObjectInformationW(desktop, UOI_NAME, nullptr, 0, &bytes);
             if (!bytes) {
@@ -635,6 +716,7 @@ Json Desktop::execute(const std::string &op, const Json &a) {
             else
                 errors[key] = GetLastError();
         };
+        desktopName(GetProcessWindowStation(), "windowStation");
         auto threadDesktop = GetThreadDesktop(GetCurrentThreadId());
         if (threadDesktop) {
             desktopName(threadDesktop, "threadDesktop");
@@ -754,8 +836,25 @@ Json Desktop::execute(const std::string &op, const Json &a) {
                 "preserveWindowGeometry conflicts with requested window geometry change");
         auto h = p.window(a);
         if (op == "window.activate") {
-            if (!SetForegroundWindow(h))
-                throw std::runtime_error("Foreground request denied by Windows");
+            InputLock input_lock;
+            if(!IsWindowEnabled(h))throw std::runtime_error("window_blocked: target disabled by a modal dialog");
+            if(IsIconic(h))ShowWindowAsync(h,SW_RESTORE);
+            for(int attempt=0;attempt<2 && (GetForegroundWindow()!=h || IsIconic(h));++attempt) {
+                const DWORD foregroundThread=GetWindowThreadProcessId(GetForegroundWindow(),nullptr);
+                const DWORD currentThread=GetCurrentThreadId();
+                const DWORD targetThread=GetWindowThreadProcessId(h,nullptr);
+                MSG queued{};PeekMessageW(&queued,nullptr,WM_USER,WM_USER,PM_NOREMOVE);
+                const bool attached=attempt>0 && foregroundThread && foregroundThread!=currentThread &&
+                    AttachThreadInput(currentThread,foregroundThread,TRUE);
+                const bool attachedTarget=attempt>0 && targetThread!=currentThread && targetThread!=foregroundThread && AttachThreadInput(currentThread,targetThread,TRUE);
+                if(attempt>0){BringWindowToTop(h);SetActiveWindow(h);}
+                SetForegroundWindow(h);
+                if(attachedTarget)AttachThreadInput(currentThread,targetThread,FALSE);
+                if(attached)AttachThreadInput(currentThread,foregroundThread,FALSE);
+                for(int poll=0;poll<10 && (GetForegroundWindow()!=h || IsIconic(h));++poll)Sleep(20);
+            }
+            if(GetForegroundWindow()!=h || IsIconic(h))
+                throw std::runtime_error("window_activation_failed: Windows did not restore target focus");
         } else if (op == "window.close") {
             if (!PostMessageW(h, WM_CLOSE, 0, 0))
                 throw std::runtime_error("WM_CLOSE dispatch failed");
@@ -785,6 +884,19 @@ Json Desktop::execute(const std::string &op, const Json &a) {
     }
     if (op == "ui.tree" || op == "ui.find")
         return p.query(a);
+    if(op=="ui.click") {
+        auto e=p.element(a);BOOL enabled=FALSE;check(e->get_CurrentIsEnabled(&enabled),"enabled");
+        if(!enabled)throw std::runtime_error("control_disabled");
+        ComPtr<IUIAutomationInvokePattern> invoke;
+        if(SUCCEEDED(e->GetCurrentPatternAs(UIA_InvokePatternId,IID_PPV_ARGS(&invoke)))&&invoke) {
+            // Never retry a failed Invoke through pointer input: outcome may be partial.
+            check(invoke->Invoke(),"Invoke");return receipt("uia.Invoke");
+        }
+        RECT b{};check(e->get_CurrentBoundingRectangle(&b),"control bounds");
+        auto target=p.window(a);RECT w{};GetWindowRect(target,&w);
+        return execute("input.click",{{"windowRef",a.at("windowRef")},{"autoActivate",true},{"coordinateSpace","window_relative"},
+            {"x",(b.left+b.right)/2-w.left},{"y",(b.top+b.bottom)/2-w.top}});
+    }
     if (op == "ui.fill_form") {
         InputLock lock;
         return fill_form(a, [&](const std::string& operation, const Json& args) { return execute(operation, args); },
@@ -949,6 +1061,8 @@ Json Desktop::execute(const std::string &op, const Json &a) {
         }
         if (op == "ui.fill") {
             InputLock input_lock;
+            if(a.value("autoActivate",false) && a.contains("windowRef"))
+                execute("window.activate",{{"windowRef",a.at("windowRef")}});
             const auto started = std::chrono::steady_clock::now();
             const auto text = a.at("text").get<std::string>();
             if (text.find('\0') != std::string::npos) throw std::invalid_argument("Text contains NUL");
@@ -1169,7 +1283,7 @@ Json Desktop::execute(const std::string &op, const Json &a) {
             return {{"elements", selected}};
         }
         if (op == "ui.get")
-            return p.describe(e.Get());
+            return p.describe(e.Get(), a.value("details", true));
         if (op == "ui.text") {
             auto text = pattern<IUIAutomationTextPattern>(e.Get(), UIA_TextPatternId);
             ComPtr<IUIAutomationTextRange> range;
@@ -1178,7 +1292,7 @@ Json Desktop::execute(const std::string &op, const Json &a) {
             check(range->GetText(bounded(a, "maxLength", 65536, 1, 10000000), &s), "GetText");
             return {{"text", bstr(s)}};
         }
-        if (op == "ui.focus")
+    if (op == "ui.focus")
             check(e->SetFocus(), "SetFocus");
         else if (op == "ui.invoke")
             check(pattern<IUIAutomationInvokePattern>(e.Get(), UIA_InvokePatternId)->Invoke(), "Invoke");
@@ -1262,8 +1376,29 @@ Json Desktop::execute(const std::string &op, const Json &a) {
     }
     if (op.starts_with("input.")) {
         InputLock input_lock;
-        // Bind input to a live window. Do not steal focus when a modal/user intervenes.
+        // Common actions request focus recovery inside the input lock, closing the
+        // gap between the agent-layer focus check and native event dispatch.
         auto inputArgs = a;
+        const bool pathMove = op == "input.move" && a.contains("points");
+        if (pathMove) {
+            const auto& points = a.at("points");
+            if (a.contains("x") || a.contains("y") || !points.is_array() || points.empty() || points.size() > 4096)
+                throw std::invalid_argument("move.points requires 1..4096 pairs and no x/y fields");
+            for (const auto& point : points) {
+                if (!point.is_array() || point.size() != 2)
+                    throw std::invalid_argument("move point must be [x,y]");
+                for (const auto& value : point)
+                    if (!value.is_number_integer() || value.get<int64_t>() < LONG_MIN || value.get<int64_t>() > LONG_MAX)
+                        throw std::invalid_argument("move coordinates must be Windows pixel integers");
+            }
+            if (a.contains("hold")) {
+                const auto hold = a.at("hold").get<std::string>();
+                if ((hold != "left" && hold != "right" && hold != "middle") || points.size() < 2)
+                    throw std::invalid_argument("Held move requires left/right/middle and at least two points");
+            }
+        } else if (a.contains("hold")) {
+            throw std::invalid_argument("hold is only supported with move.points");
+        }
         const auto space = a.value("coordinateSpace", std::string("screen_physical"));
         if (space != "screen_physical" && space != "window_relative" && space != "client_relative")
             throw std::invalid_argument("Unsupported native coordinateSpace");
@@ -1271,6 +1406,8 @@ Json Desktop::execute(const std::string &op, const Json &a) {
             throw std::invalid_argument("Relative input requires windowRef");
         if (a.contains("windowRef")) {
             const auto target = p.window(a);
+            if(a.value("autoActivate",false) && (GetForegroundWindow()!=target || IsIconic(target)))
+                execute("window.activate",{{"windowRef",a.at("windowRef")}});
             if (!IsWindowVisible(target) || IsIconic(target) || !IsWindowEnabled(target))
                 throw std::runtime_error("input_target_unavailable: hidden, minimized or blocked by modal");
             if (GetForegroundWindow() != target)
@@ -1295,14 +1432,42 @@ Json Desktop::execute(const std::string &op, const Json &a) {
                         throw std::invalid_argument("Point outside target bounds");
                     point.x += origin.x; point.y += origin.y;
                 }
+                if (GetAncestor(WindowFromPoint(point), GA_ROOT) != target && a.value("autoActivate",false)) {
+                    execute("window.activate",{{"windowRef",a.at("windowRef")}});
+                    for(int attempt=0;attempt<5&&GetAncestor(WindowFromPoint(point),GA_ROOT)!=target;++attempt)Sleep(20);
+                }
                 if (GetAncestor(WindowFromPoint(point), GA_ROOT) != target)
-                    throw std::runtime_error("input_point_occluded: reobserve target");
+                    throw std::runtime_error("input_point_occluded: target remains occluded after bounded recovery; no input sent");
                 inputArgs[xKey] = point.x; inputArgs[yKey] = point.y;
             };
             if (a.contains("x") || a.contains("y")) translate("x", "y");
             if (op == "input.drag") translate("toX", "toY");
+            if (pathMove) {
+                // Validate and translate the entire path before sending any input.
+                for (auto& pair : inputArgs["points"]) {
+                    POINT point{pair[0].get<LONG>(), pair[1].get<LONG>()};
+                    if (space != "screen_physical") {
+                        if (point.x < 0 || point.y < 0 || point.x >= area.right || point.y >= area.bottom)
+                            throw std::invalid_argument("Point outside target bounds");
+                        point.x += origin.x; point.y += origin.y;
+                    }
+                    if (GetAncestor(WindowFromPoint(point), GA_ROOT) != target)
+                    {
+                        if (a.value("autoActivate", false)) {
+                            execute("window.activate", {{"windowRef", a.at("windowRef")}});
+                            for (int attempt=0; attempt<5 && GetAncestor(WindowFromPoint(point),GA_ROOT)!=target; ++attempt) Sleep(20);
+                        }
+                        if (GetAncestor(WindowFromPoint(point), GA_ROOT) != target)
+                            throw std::runtime_error("input_point_occluded: target remains occluded after bounded recovery; no input sent");
+                    }
+                    pair = Json::array({point.x, point.y});
+                }
+            }
         }
         std::vector<INPUT> events;
+        if ((op == "input.type_text" || op == "input.key_chord") && a.contains("windowRef") &&
+            GetForegroundWindow() != p.window(a))
+            throw std::runtime_error("input_focus_changed_before_dispatch");
         if (op == "input.type_text") {
             auto text = wide(a.at("text").get<std::string>());
             for (auto ch : text) {
@@ -1347,11 +1512,23 @@ Json Desktop::execute(const std::string &op, const Json &a) {
                     w = GetSystemMetrics(SM_CXVIRTUALSCREEN), h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
                 if (x < left || y < top || x >= left + w || y >= top + h)
                     throw std::invalid_argument("Point outside virtual screen");
-                mouse(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
+                mouse(MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK |
+                          (pathMove ? MOUSEEVENTF_MOVE_NOCOALESCE : 0),
                       LONG((int64_t(x - left) * 65535) / (w - 1)),
                       LONG((int64_t(y - top) * 65535) / (h - 1)));
             };
-            if (op == "input.scroll")
+            if (pathMove) {
+                const auto& points = inputArgs.at("points");
+                const auto hold = a.value("hold", std::string{});
+                const DWORD down = hold == "right" ? MOUSEEVENTF_RIGHTDOWN :
+                                   hold == "middle" ? MOUSEEVENTF_MIDDLEDOWN : MOUSEEVENTF_LEFTDOWN;
+                const DWORD up = hold == "right" ? MOUSEEVENTF_RIGHTUP :
+                                 hold == "middle" ? MOUSEEVENTF_MIDDLEUP : MOUSEEVENTF_LEFTUP;
+                move(points[0][0], points[0][1]);
+                if (!hold.empty()) mouse(down);
+                for (size_t i = 1; i < points.size(); ++i) move(points[i][0], points[i][1]);
+                if (!hold.empty()) mouse(up);
+            } else if (op == "input.scroll")
                 mouse(a.value("horizontal", false) ? MOUSEEVENTF_HWHEEL : MOUSEEVENTF_WHEEL, 0, 0,
                       DWORD(a.at("delta").get<int>()));
             else {
@@ -1379,6 +1556,9 @@ Json Desktop::execute(const std::string &op, const Json &a) {
             for (auto it = modifiers.rbegin(); it != modifiers.rend(); ++it)
                 events.push_back(key(*it, KEYEVENTF_KEYUP));
             try {
+                // Recheck immediately before injection. Do not replay a dispatched gesture.
+                if(a.contains("windowRef") && GetForegroundWindow()!=p.window(a))
+                    throw std::runtime_error("input_focus_changed_before_dispatch");
                 send(events);
             } catch (...) {
                 events.clear();

@@ -9,6 +9,11 @@
 #include <iomanip>
 #include <sstream>
 #include <stdexcept>
+#include <cmath>
+#ifdef DP_WITH_WEBP
+#include <webp/encode.h>
+#include <webp/decode.h>
+#endif
 
 namespace dp {
 using Microsoft::WRL::ComPtr;
@@ -32,6 +37,17 @@ std::string utf8(std::wstring_view s) {
     return out;
 }
 Image load_image(const std::filesystem::path& path) {
+#ifdef DP_WITH_WEBP
+    if(path.extension()==L".webp") {
+        std::ifstream file(path,std::ios::binary);
+        std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(file)),{});
+        int w=0,h=0;
+        if(!WebPGetInfo(bytes.data(),bytes.size(),&w,&h)||int64_t(w)*h>64000000)throw std::runtime_error("Invalid WebP image");
+        Image image{w,h,std::vector<uint8_t>(size_t(w)*h*3)};
+        if(!WebPDecodeRGBInto(bytes.data(),bytes.size(),image.rgb.data(),image.rgb.size(),w*3))throw std::runtime_error("WebP decode failed");
+        return image;
+    }
+#endif
     Apartment apt; auto f=factory(); ComPtr<IWICBitmapDecoder> decoder;
     check(f->CreateDecoderFromFilename(path.c_str(),nullptr,GENERIC_READ,WICDecodeMetadataCacheOnDemand,&decoder));
     ComPtr<IWICBitmapFrameDecode> frame; check(decoder->GetFrame(0,&frame));
@@ -42,6 +58,40 @@ Image load_image(const std::filesystem::path& path) {
     Image image{int(w),int(h),std::vector<uint8_t>(size_t(w)*h*3)};
     check(converter->CopyPixels(nullptr,w*3,UINT(image.rgb.size()),image.rgb.data()));
     return image;
+}
+bool webp_available() {
+#ifdef DP_WITH_WEBP
+    return true;
+#else
+    return false;
+#endif
+}
+void save_webp(const Image& image,const std::filesystem::path& path,bool lossless) {
+    image.validate();
+#ifdef DP_WITH_WEBP
+    uint8_t* bytes=nullptr;
+    const size_t size=lossless?WebPEncodeLosslessRGB(image.rgb.data(),image.width,image.height,image.width*3,&bytes):
+        WebPEncodeRGB(image.rgb.data(),image.width,image.height,image.width*3,85,&bytes);
+    if(!size)throw std::runtime_error("WebP encode failed");
+    struct Guard {uint8_t* p;~Guard(){WebPFree(p);}} guard{bytes};
+    if(!path.parent_path().empty())std::filesystem::create_directories(path.parent_path());
+    std::ofstream file(path,std::ios::binary);file.write(reinterpret_cast<const char*>(bytes),size);
+    if(!file)throw std::runtime_error("WebP write failed");
+#else
+    throw std::runtime_error("WebP is disabled in this build; use PNG");
+#endif
+}
+Image resize_image(const Image& image,int max_edge) {
+    image.validate();if(max_edge<1)throw std::invalid_argument("max_edge must be positive");
+    if(std::max(image.width,image.height)<=max_edge)return image;
+    const double scale=double(max_edge)/std::max(image.width,image.height);
+    const int w=std::max(1,int(std::lround(image.width*scale))),h=std::max(1,int(std::lround(image.height*scale)));
+    Apartment apt;auto f=factory();ComPtr<IWICBitmap> bitmap;
+    check(f->CreateBitmapFromMemory(image.width,image.height,GUID_WICPixelFormat24bppRGB,image.width*3,UINT(image.rgb.size()),const_cast<BYTE*>(image.rgb.data()),&bitmap));
+    ComPtr<IWICBitmapScaler> scaler;check(f->CreateBitmapScaler(&scaler));
+    check(scaler->Initialize(bitmap.Get(),w,h,WICBitmapInterpolationModeFant));
+    Image result{w,h,std::vector<uint8_t>(size_t(w)*h*3)};
+    check(scaler->CopyPixels(nullptr,w*3,UINT(result.rgb.size()),result.rgb.data()));return result;
 }
 void save_png(const Image& image,const std::filesystem::path& path) {
     image.validate();

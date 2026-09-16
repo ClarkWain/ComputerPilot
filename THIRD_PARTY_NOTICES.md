@@ -1,5 +1,15 @@
 # Third-party notices
 
+## libwebp 1.6.0
+
+Copyright (c) 2010 Google Inc. and The WebM Project authors.
+Source: https://chromium.googlesource.com/webm/libwebp/+/refs/tags/v1.6.0
+BSD license and additional patent grant: upstream COPYING and PATENTS are copied
+to build/licenses/webp and included in release packages. The C codec is linked
+statically for WebP screenshots; no model or Python runtime is involved.
+Official archive SHA-256:
+e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564.
+
 ## Microsoft OmniParser
 
 The YOLOv9 adapter contract in `src/detector_torch.cpp` is adapted from Microsoft
