@@ -31,7 +31,11 @@
 
 ## 当前 profile
 
-`mspaint-classic-zh-CN`：经典简体中文 Paint，进程 mspaint.exe、窗口类 MSPaintApp，应用报告 96 或 144 DPI，窗口宽度至少 1100、画布 100% 缩放、关键中文工具栏控件可访问。要求画布未滚动，图形处于可见画布内。系统显示缩放由工具尺寸校准，不能据此声称任意版本、任意缩放兼容。
+`mspaint-classic-zh-CN`：经典简体中文 Paint，进程 mspaint.exe、窗口类 MSPaintApp，应用报告 96、120 或 144 DPI，窗口宽度至少 1100、画布 100% 缩放、关键中文工具栏控件可访问。要求画布未滚动，图形处于可见画布内。系统显示缩放由工具尺寸校准，不能据此声称任意版本、任意缩放兼容。
+
+120 DPI 已补充经典配置匹配和坐标换算的模拟回归测试；尚未完成经典版画图在 120 DPI 下的实机验收。
+
+`mspaint-modern-zh-CN` 使用独立 `paint-modern` 适配器，已实测新版 11.2605.81.0、120 DPI、100% 缩放。要求完整可见画布、展开工具栏（最小宽度 1500，且必须通过控件校验）。支持 `drawing.selectBrush`（brush/pencil）、`drawing.setColor`（RGB）、`drawing.setStrokeWidth`（1..24、26、28、30）、`drawing.drawPolyline`（points/closed/stroke）及 `drawing.fillAt`（position/color）。具体参数以返回示例为准。画布原点直接读取实际边界，100% 下坐标不再乘 DPI；笔宽通过 RangeValue 按分段索引写入 并回读像素文本。设置回读成功和动作派发仍需截图验收。原生形状、文字、保存、其他 DPI 和缩放尚未开放。不同版本依据见 [Paint 版本适配](PAINT-VERSION-ADAPTATION.md)。
 
 状态为实验性：历史实测存在 1 像素栅格舍入误差，尚未完成所有动作的逐像素位置、尺寸、描边验收。语义派发成功不等于艺术质量或像素精度达标。
 
@@ -61,7 +65,7 @@
 
 它不会自动平滑尖角或对像素边缘抗锯齿。需要曲线时提供合适的曲线采样点；需要规则圆形时使用 drawCircle/drawEllipse。move 减少的是重复落笔接缝和 Agent 往返，不代表改变 Paint 的渲染能力。
 
-144 DPI 的 DPI-aware Paint 在 100% 缩放下画布仍为一文档像素对应一屏幕像素；工具栏放大 1.5 倍不能用于放大图形。执行器将 UI 缩放与画布缩放分开：UI 尺寸校准负责画布边框 inset，画布倍率为 UI 校准倍率 × 96 / 窗口 DPI。
+120/144 DPI 的 DPI-aware Paint 在 100% 缩放下画布仍为一文档像素对应一屏幕像素；工具栏放大 1.25/1.5 倍不能用于放大图形。执行器将 UI 缩放与画布缩放分开：UI 尺寸校准负责画布边框 inset，画布倍率为 UI 校准倍率 × 96 / 窗口 DPI。
 
 ## 动作和参数
 
@@ -127,7 +131,7 @@ unavailable 的元素包含 id 和 reasons，例如 dpi_mismatch、toolbar_too_n
 | match.executable | 进程文件名，忽略大小写比较，如 mspaint.exe |
 | match.className | 顶层窗口类名，精确比较，如 MSPaintApp |
 | match.requiredSelectors | selectors 中的键名数组；完整 UI 查询中每个必须恰好匹配一个可用且可见控件 |
-| dpi / supportedDpi | dpi 是旧配置的单值；提供 supportedDpi 数组时以其中允许的值为准。当前 Paint 为 [96,144]，并在执行时校准工具栏尺寸与画布比例 |
+| dpi / supportedDpi | dpi 是旧配置的单值；提供 supportedDpi 数组时以其中允许的值为准。当前 Paint 为 [96,120,144]，并在执行时校准工具栏尺寸与画布比例 |
 | minimumWindowWidth | 窗口宽度下限，按 DPI 缩放为 `minimumWindowWidth × dpi/96` 物理像素；高 DPI 下防止功能区图库折叠导致布局不匹配（太窄时报 toolbar_too_narrow） |
 | selectors | 命名控件定位对象；nameContains 为包含匹配，其余键如 name/role/automationId 为精确匹配 |
 | actions | 动作目录数组，每项含 action、description、example；只列 C++ 已实现并经适配的动作 |

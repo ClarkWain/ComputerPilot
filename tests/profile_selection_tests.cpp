@@ -46,6 +46,11 @@ int wmain(int argc,wchar_t** argv) {
         {auto narrow=discover();
          check(narrow["profiles"].empty(),"144 DPI window too narrow for the scaled toolbar is rejected");
          check(narrow["unavailable"][0]["reasons"][0]=="toolbar_too_narrow","narrow high-DPI window reports toolbar_too_narrow, not a missing control");}
+        window["bounds"]["width"]=1700;window["dpi"]=120;
+        check(discover()["profiles"].size()==1,"120 DPI is accepted when the classic UI fingerprint matches");
+        {auto savedElement=elements[0];elements[0]["name"]="modern zoom control";
+         check(discover()["profiles"].empty(),"120 DPI does not bypass UI fingerprint validation");elements[0]=savedElement;}
+        window["bounds"]["width"]=1300;
         window["dpi"]=240;check(discover()["profiles"].empty(),"unsupported DPI rejected");window["dpi"]=96;
         window["bounds"]["width"]=800;check(discover()["profiles"].empty(),"narrow layout rejected");window["bounds"]["width"]=1300;
         elements[0]["name"]="200%";check(discover()["profiles"].empty(),"zoom mismatch rejected");elements[0]["name"]="100%";

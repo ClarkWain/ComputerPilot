@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "mspaint-modern-zh-CN",
+  "adapter": "paint-modern",
+  "dpi": 120,
+  "supportedDpi": [120],
+  "minimumWindowWidth": 1500,
+  "description": "新版中文 Paint 11.2605：120 DPI、100% 缩放、完整可见画布及展开工具栏。选笔、RGB、笔宽、连续轮廓、油漆桶填充。",
+  "coordinates": "画布像素；原点取实际画布边界，100% 下每像素对应一个屏幕物理像素，不乘系统 DPI。",
+  "match": {"executable":"mspaint.exe","className":"MSPaintApp","requiredSelectors":["canvas","zoom","brush","pencil","fill","primary","editColors"]},
+  "selectors": {
+    "canvas":{"nameContains":"在画布上使用","role":"50026"},
+    "zoom":{"name":"缩放","role":"50015"},
+    "brush":{"name":"画笔","role":"50013"},
+    "pencil":{"name":"铅笔","role":"Button"},
+    "fill":{"name":"填充","role":"Button"},
+    "primary":{"nameContains":"颜色 1:","role":"50013"},
+    "editColors":{"name":"编辑颜色","role":"Button"},
+    "width":{"name":"大小","role":"50015"},
+    "opacity":{"name":"不透明度","role":"50015"}
+  },
+  "actions": [
+    {"action":"drawing.selectBrush","description":"选标准画笔或铅笔并回读工具","example":{"action":"drawing.selectBrush","args":{"brush":"brush"}}},
+    {"action":"drawing.setColor","description":"设前景 RGB 并回读三通道","example":{"action":"drawing.setColor","args":{"color":[245,155,165]}}},
+    {"action":"drawing.setStrokeWidth","description":"设当前工具笔宽 1..24、26、28、30 像素并回读；需先选画笔","example":{"action":"drawing.setStrokeWidth","args":{"width":7}}},
+    {"action":"drawing.drawPolyline","description":"标准画笔连续路径，明确颜色、宽度、100% 不透明度；closed 可闭合","example":{"action":"drawing.drawPolyline","args":{"points":[[50,50],[150,50],[150,150],[50,150]],"closed":true,"stroke":{"color":[0,0,0],"width":7}}}},
+    {"action":"drawing.fillAt","description":"用指定 RGB 在画布点调用油漆桶；调用者须确保目标轮廓闭合","example":{"action":"drawing.fillAt","args":{"position":[100,100],"color":[255,220,40]}}}
+  ]
+}

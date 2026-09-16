@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Allow 120 DPI for the classic Chinese Paint profile while retaining UI fingerprint checks. Add discovery, origin/diameter and continuous-path regression coverage; classic 120 DPI live rendering remains unverified.
+- Add a separate modern Chinese Paint adapter for the observed 11.2605.81.0 UI at 120 DPI and 100% zoom: brush selection, RGB readback, verified pixel width, continuous paths and bucket fill. Preserve classic behavior. Reject unsupported zoom, clipped canvas, incomplete controls and partial-action replay.
+
 ## 0.4.0 — 2026-09-16
 
 - **Breaking MCP API change:** replace the previous tools with `list_windows`, `get_window_state`, `execute_semantic`, and `execute_batch`. Refresh client tool discovery and migrate calls using `docs/MCP.md`; legacy aliases are not retained.

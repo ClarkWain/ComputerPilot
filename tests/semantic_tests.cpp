@@ -173,6 +173,16 @@ int main(int argc, char** argv) {
         })}}}};
         auto pathBatch=dp::run_semantic(pathScene,profile,pathMock,[](int){});
         require(pathBatch["completed"]==2 && pathNativeCalls==2 && pathColorWrites==3,"continuous paths did not reuse style or were split into segments");
+        windowDpi=120;scale=1.25;draws=0;
+        const auto dpi120=dp::run_semantic(request,profile,mock,[](int){});
+        require(dpi120["status"]=="ok" && dpi120["canvasScale"]==1.0 && draws==1,
+                "120 DPI-aware Paint must keep a physical-pixel canvas");
+        require(drag["x"]==271 && drag["y"]==351 && drag["toX"]==430 && drag["toY"]==510,
+                "120 DPI origin/inset rounding or diameter is incorrect");
+        draws=0;
+        const auto path120=dp::run_semantic(polyline,profile,mock,[](int){});
+        require(path120["status"]=="ok" && draws==1 && drag["points"]==Json({{51,211},{111,211},{111,271},{51,211}}),
+                "120 DPI continuous path was scaled with the toolbar");
         windowDpi=144;scale=1.5;draws=0;
         const auto highDpi=dp::run_semantic(request,profile,mock,[](int){});
         require(highDpi["status"]=="ok" && highDpi["canvasScale"]==1.0 && drag["toX"].get<int>()-drag["x"].get<int>()==159,"DPI-aware Paint canvas incorrectly scaled with ribbon");
