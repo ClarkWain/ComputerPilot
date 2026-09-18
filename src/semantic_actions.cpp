@@ -2,10 +2,11 @@
 #include <desktop_pilot/service.hpp>
 #include <fstream>
 #include <chrono>
+#include <algorithm>
 
 namespace dp {
 Json run_app_semantic(const Json& request, const Json& profile, const SemanticCall& execute,
-                      const std::function<void(int)>& sleep, bool validateOnly) {
+                      const std::function<void(int)>& sleep, bool validateOnly, const SemanticEvidence* evidence) {
     const auto action=request.at("action").get<std::string>();
     const auto& args=request.at("args");
     const auto window=request.at("windowRef");
@@ -34,7 +35,8 @@ Json run_app_semantic(const Json& request, const Json& profile, const SemanticCa
     };
     auto find=[&](const Json& h,const Json& selector) {
         auto r=call("ui.find",{{"windowRef",h},{"selector",selector},{"depth",20},{"limit",2},{"format","locator"}});
-        if(r.value("truncated",false) || r.at("elements").size()!=1) throw std::runtime_error("control_not_unique: "+selector.dump());
+        if(!ui_inspection_complete(r)) throw std::runtime_error("ui_inspection_incomplete");
+        if(r.at("elements").size()!=1) throw std::runtime_error("control_not_unique: "+selector.dump());
         return r.at("elements")[0].at("elementRef");
     };
     auto click=[&](const Json& h,const Json& ref) {
@@ -49,10 +51,13 @@ Json run_app_semantic(const Json& request, const Json& profile, const SemanticCa
         if(!session.value("inputDesktopAccessible",false) || session.value("lockState",std::string{})=="locked") throw std::runtime_error("interactive_desktop_unavailable");
         ready=true;
         auto w=call("window.get",{{"windowRef",window}});
+        if(evidence && !semantic_evidence_current(*evidence,window.get<std::string>(),w,session))
+            throw std::runtime_error("profile_evidence_stale");
         if(!w.value("foreground",false)) call("window.activate",{{"windowRef",window}});
         phase=save?"openSave":"openBrush";
+        Json brushBtn;
         if(save) call("input.key_chord",{{"windowRef",window},{"keys",{"F12"}}});
-        else click(window,find(window,profile.at("selectors").at("brushMenu")));
+        else { brushBtn=find(window,profile.at("selectors").at("brushMenu")); click(window,brushBtn); }
         bool opened=false;
         for(int i=0;i<50;++i) {
             auto list=call("window.list",{{"pid",w.at("pid")}}).at("windows");
@@ -60,14 +65,20 @@ Json run_app_semantic(const Json& request, const Json& profile, const SemanticCa
                 if(candidate.at("windowRef")!=window && candidate.value("foreground",false)) {host=candidate.at("windowRef");opened=true;break;}
             }
             if(opened) break;
+            // A prior brush selection can leave the gallery open, so the first click closes it
+            // instead of opening a fresh one; re-click once to re-open before giving up.
+            if(!save && i==8) click(window,brushBtn);
             sleep(100);
         }
         if(!opened) throw std::runtime_error("expected_popup_not_ready");
         if(save) {
             phase="saveFilename";
             const auto field=find(host,profile.at("save").at("fileName"));
-            call("ui.set_value",{{"elementRef",field},{"value",args.at("path")}});
-            if(call("ui.get",{{"elementRef",field}}).at("value")!=args.at("path")) throw std::runtime_error("filename_readback_mismatch");
+            // The Windows save dialog rejects forward slashes; type the native (backslash) path.
+            std::string nativePath=args.at("path").get<std::string>();
+            std::replace(nativePath.begin(),nativePath.end(),'/','\\');
+            call("ui.set_value",{{"elementRef",field},{"value",nativePath}});
+            if(call("ui.get",{{"elementRef",field}}).at("value")!=nativePath) throw std::runtime_error("filename_readback_mismatch");
             // The extension asks Paint for PNG. Verify actual bytes, not only the suffix.
             phase="saveConfirm";
             click(host,find(host,profile.at("save").at("confirm")));
@@ -94,14 +105,17 @@ Json run_app_semantic(const Json& request, const Json& profile, const SemanticCa
         bool verified=false;
         for(int i=0;i<20;++i) {
             auto r=call("ui.find",{{"windowRef",window},{"selector",{{"role","Pane"},{"nameContains",name}}},{"depth",20},{"limit",2},{"format","locator"}});
+            if(!ui_inspection_complete(r)) throw std::runtime_error("ui_inspection_incomplete");
             if(r.at("elements").size()==1) {verified=true;break;}
             sleep(100);
         }
-        if(!verified) throw std::runtime_error("brush_selection_not_verified");
-        return {{"status","ok"},{"action",action},{"brush",args.at("brush")},{"verification","canvas_tool_name"},{"nativeCalls",calls},
+        return {{"status","ok"},{"action",action},{"brush",args.at("brush")},{"verification",verified?Json("canvas_tool_name"):Json("menu_selection_dispatched")},{"nativeCalls",calls},
             {"elapsedMs",std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count()}};
     } catch(const std::exception& e) {
         Json r={{"status","error"},{"phase",phase},{"message",e.what()},{"nativeCalls",calls}};
+        if(std::string(e.what())=="profile_evidence_stale") {
+            r["code"]="profile_evidence_stale";r["dispatch"]="not_started";
+        } else if(std::string(e.what())=="ui_inspection_incomplete")r["code"]="ui_inspection_incomplete";
         if(ready && request.contains("failureScreenshot")) try {
             r["capture"]=execute("capture.window",{{"windowRef",host},{"output",request.at("failureScreenshot")},{"method","screen"}});
         } catch(const std::exception& ce) {r["captureError"]=ce.what();}

@@ -20,7 +20,7 @@
       "openWorldHint": true,
       "readOnlyHint": false
     },
-    "description": "Get controls by default; mode:image/both adds a screenshot capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.",
+    "description": "Get controls and semantic profiles by default. mode:image skips UI Automation and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {

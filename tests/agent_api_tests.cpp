@@ -9,19 +9,32 @@ int main(){
   Json control_id={{"elementRef","e1"},{"name","Title"},{"role","Edit"},{"value","old"},{"bounds",{{"x",120},{"y",230},{"width",100},{"height",20}}}};
   bool multi=false,empty=false,fail=false,foreground=true,enabled=true,activationWorks=true,stealFocus=false;int activations=0;Json last;
   Json frame={{"width",200},{"height",150},{"bounds",bounds},{"path","test.webp"},{"imageRef","image1"}};
+  int profileReads=0,treeReads=0,captures=0;bool inspectionFails=false,invalidated=false,profileFails=false,malformedTree=false;
+  std::string resetOperation;
   auto dispatch=[&](const std::string& op,const Json& args)->Json{
+   if(op==resetOperation)return {{"status","error"},{"referencesInvalidated",true},{"dispatch","unknown"},{"code","provider_timeout"}};
    Json w={{"windowRef","w1"},{"pid",42},{"title","Example"},{"foreground",foreground},{"enabled",enabled},{"bounds",bounds}};
    if(!enabled)w["blockingWindow"]={{"windowRef","dialog"},{"title","Confirm"},{"pid",42}};
-   if(op=="semantic.profiles")return {{"status","ok"},{"profiles",Json::array()}};
+   if(op=="semantic.profiles") {
+    ++profileReads;
+    check(args.at("providerTimeoutMs")==8000,"profile scan has a worker deadline");
+    if(profileFails)return {{"status","error"},{"code","provider_error"},{"referencesInvalidated",invalidated}};
+    return {{"status","ok"},{"profiles",Json::array()}};
+   }
    if(op=="window.list") {
     check(args.empty(),"enumeration must not forward filters");
     auto second=w;second["windowRef"]="w2";
     return {{"windows",empty?Json::array():(multi?Json::array({w,second}):Json::array({w}))}};
    }
    if(op=="window.get")return w;
-   if(op=="ui.tree")return {{"elements",Json::array({control_id})},{"truncated",false}};
+   if(op=="ui.tree") {
+    ++treeReads;
+    if(malformedTree)return {{"status","ok"},{"elements",42}};
+    if(inspectionFails)return {{"status","error"},{"code","provider_error"},{"referencesInvalidated",invalidated}};
+    return {{"elements",Json::array({control_id})},{"truncated",false}};
+   }
    if(op=="ui.get")return control_id;
-   if(op=="capture.window")return frame;
+   if(op=="capture.window"){++captures;return frame;}
    if(op=="window.activate"){++activations;foreground=activationWorks;return {{"status","ok"}};}
    ++writes;last=args;
    if(fail)return {{"status","error"},{"dispatch","unknown"}};
@@ -44,7 +57,7 @@ int main(){
   AgentApi other;
   check(other.call("get_window_state",{{"window_id","w1"}},dispatch)["code"]=="unknown_window","window ids belong to one connection");
   auto observe=[&](){return api.call("get_window_state",{{"window_id","w1"},{"mode","controls"}},dispatch);};
-  auto o=observe();check(o["controls"][0]["bounds"]["x"]==20,"window coordinate conversion");
+    auto o=observe();check(o["controls"][0]["bounds"][0]==20&&o["controls"][0]["bounds"][1]==30&&o["controls"][0]["bounds"][2]==100&&o["controls"][0]["bounds"][3]==20,"window coordinate conversion");
   Json base={{"window_id","w1"}};
   auto act=[&](Json action){auto a=base;a["actions"]=Json::array({action});return api.call("execute_batch",a,dispatch);};
   check(act({{"type","click"},{"point",{{"x",400},{"y",5}}}})["code"]=="invalid_arguments"&&writes==0,"reject outside points before dispatch");
@@ -104,6 +117,44 @@ int main(){
   check(last["points"]==Json({{60,80},{80,100}}),"cropped screenshot path maps offsets internally");
   observe();r=act({{"type","click"},{"control_id","e1"}});
   check(last["elementRef"]=="e1"&&!last.contains("x"),"control click routes by element instead of global coordinates");
+  auto profilesBefore=profileReads,treesBefore=treeReads;
+  inspectionFails=true;profileFails=true;
+  o=api.call("get_window_state",{{"window_id","w1"},{"mode","image"}},dispatch);
+  check(o["status"]=="ok"&&o["semantic"]["status"]=="not_checked"&&profileReads==profilesBefore&&treeReads==treesBefore,"image bypasses all UIA even when provider is broken");
+  check(act({{"type","click"},{"point",{{"x",10},{"y",10}}}})["status"]=="ok","image fallback supports verified coordinate input");
+  o=api.call("get_window_state",{{"window_id","w1"},{"mode","both"}},dispatch);
+  check(o["status"]=="ok"&&o.contains("capture")&&o["inspection"]["status"]=="error"&&o["controls"].empty()&&treeReads==treesBefore,"both preserves image without a second scan after discovery failure");
+  profileFails=false;
+  o=api.call("get_window_state",{{"window_id","w1"},{"mode","both"}},dispatch);
+  check(o["status"]=="ok"&&o.contains("capture")&&o["inspection"]["code"]=="provider_error","both preserves image after ordinary control query failure");
+  check(act({{"type","click"},{"control_id","e1"}})["code"]=="invalid_arguments","failed scan does not retain old controls");
+  check(observe()["code"]=="provider_error","controls-only failure is explicit");
+  auto captureBefore=captures;invalidated=true;
+  o=api.call("get_window_state",{{"window_id","w1"},{"mode","both"}},dispatch);
+  check(o["referencesInvalidated"]==true&&captures==captureBefore,"worker reset never captures with invalid window references");
+  check(api.call("get_window_state",{{"window_id","w1"},{"mode","image"}},dispatch)["code"]=="unknown_window","worker reset clears old target ids");
+  check(act({{"type","press_keys"},{"chord","Enter"}})["code"]=="state_required","worker reset clears old observations");
+  inspectionFails=false;invalidated=false;api.call("list_windows",Json::object(),dispatch);
+  check(api.call("get_window_state",{{"window_id","w1"},{"mode","image"}},dispatch)["status"]=="ok","fresh enumeration restores image path after reset");
+  malformedTree=true;
+  r=api.call("get_window_state",{{"window_id","w1"},{"mode","both"}},dispatch);
+  check(r["status"]=="ok"&&r.contains("capture")&&r["inspection"]["code"]=="invalid_inspection_result","malformed UIA output preserves screenshot and explains failure");
+  malformedTree=false;
+  for(auto operation:{"window.get","window.activate","capture.window","ui.get","semantic.execute","input.key_chord"}) {
+   api.call("list_windows",Json::object(),dispatch);observe();
+   resetOperation=operation;
+   if(resetOperation=="semantic.execute") r=api.call("execute_semantic",{{"window_id","w1"},{"actions",Json::array({Json{{"action","drawing.drawCircle"},{"args",{{"center",{50,50}},{"radius",10}}}}})}},dispatch);
+   else if(resetOperation=="ui.get")r=act({{"type","click"},{"control_id","e1"}});
+   else if(resetOperation=="input.key_chord")r=act({{"type","press_keys"},{"chord","Enter"}});
+   else {
+    if(resetOperation=="window.activate")foreground=false;
+    r=api.call("get_window_state",{{"window_id","w1"},{"mode","image"}},dispatch);
+   }
+   resetOperation.clear();foreground=true;
+   check(r["referencesInvalidated"]==true&&r["next"].get<std::string>().find("list_windows")!=std::string::npos,"every worker reset reports fresh enumeration, including input failures");
+   check(api.call("get_window_state",{{"window_id","w1"},{"mode","image"}},dispatch)["code"]=="unknown_window","every worker reset clears targets");
+   check(act({{"type","press_keys"},{"chord","Enter"}})["code"]=="state_required","every worker reset clears observations");
+  }
   std::cout<<"PASS checks="<<checks<<'\n';return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

@@ -19,6 +19,6 @@ DesktopPilot v0.4.0：面向 Agent 的原生 Windows 桌面自动化与 MCP 服�
 
 执行成功不等于绘图质量合格：已删除逐图形像素抽样方案，批次后应查看画布截图。小尺寸原生 Paint 多边形仍有已知问题；扫描线绘图实验尚未集成为自动语义后端。任意后台应用输入、任意弹窗处理及锁屏绘图不在本版保证范围内。
 
-本 Core 包包含程序、profile、Skill、示例和许可证，不包含模型权重或大型图标描述模型。截图使用静态链接的 WebP 编码器；宿主不支持 WebP 时设置 `DP_IMAGE_FORMAT=png`。
+本 Core 包包含程序、profile、Skill、示例和许可证，不包含模型权重或大型图标描述模型。截图默认 PNG（兼容所有宿主）；确认宿主支持 WebP 时设置 `DP_IMAGE_FORMAT=webp`（编码器已静态链接）以减少字节。
 
 使用 `SHA256SUMS.txt` 核验 ZIP；变更、构建与许可详见 `CHANGELOG.md`、`docs/BUILDING.md` 和 `THIRD_PARTY_NOTICES.md`。

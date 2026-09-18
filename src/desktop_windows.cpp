@@ -155,19 +155,59 @@ struct Desktop::Impl {
     };
     std::map<std::string, Window> windows;
     std::map<std::string, ComPtr<IUIAutomationElement>> elements;
+    std::map<std::vector<int>, std::string> runtime_references;
+    ComPtr<IUIAutomationCacheRequest> locator_cache;
+    HRESULT com_result = E_FAIL;
+    DWORD connection_timeout_ms = 0, transaction_timeout_ms = 0;
+    struct QueryMetrics {
+        double identityMs = 0, propertyMs = 0, traversalMs = 0;
+        size_t runtimeIdLookups = 0, identityComparisons = 0, providerErrors = 0;
+    };
+    struct TimedPart {
+        double* destination;
+        std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+        ~TimedPart() { if (destination) *destination += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - start).count(); }
+    };
     size_t serial = 0;
     const std::string reference_prefix =
         std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64()) + "-";
     Impl() {
-        check(CoInitializeEx(nullptr, COINIT_MULTITHREADED), "COM MTA initialization");
+        // Basic Win32 observation/input must survive unavailable UI Automation.
+        com_result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        check(CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation)),
-              "Create UIAutomation");
+    }
+    void ensure_automation() {
+        if (automation) return;
+        check(com_result, "ui_automation_unavailable: COM MTA initialization");
+        ComPtr<IUIAutomation2> modern;
+        check(CoCreateInstance(CLSID_CUIAutomation8, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&modern)),
+              "ui_automation_unavailable: bounded UIAutomation interface");
+        check(modern->put_ConnectionTimeout(2000), "ui_automation_unavailable: configure connection timeout");
+        check(modern->put_TransactionTimeout(2000), "ui_automation_unavailable: configure transaction timeout");
+        DWORD connection = 0, transaction = 0;
+        check(modern->get_ConnectionTimeout(&connection), "ui_automation_unavailable: read connection timeout");
+        check(modern->get_TransactionTimeout(&transaction), "ui_automation_unavailable: read transaction timeout");
+        if (connection != 2000 || transaction != 2000)
+            throw std::runtime_error("ui_automation_unavailable: provider timeout configuration was not retained");
+        ComPtr<IUIAutomationCacheRequest> cache;
+        check(modern->CreateCacheRequest(&cache), "Create locator cache request");
+        check(cache->put_TreeScope(TreeScope_Element), "Locator cache scope");
+        for (auto property : {UIA_NamePropertyId, UIA_AutomationIdPropertyId, UIA_ControlTypePropertyId,
+                UIA_BoundingRectanglePropertyId, UIA_IsEnabledPropertyId, UIA_IsOffscreenPropertyId,
+                UIA_ProcessIdPropertyId})
+            check(cache->AddProperty(property), "Locator cache property");
+        // Publish only fully configured instances; never fall back to unbounded legacy UIA.
+        automation = modern;
+        locator_cache = cache;
+        connection_timeout_ms = connection;
+        transaction_timeout_ms = transaction;
     }
     ~Impl() {
         elements.clear();
+        locator_cache.Reset();
         automation.Reset();
-        CoUninitialize();
+        if (SUCCEEDED(com_result)) CoUninitialize();
     }
     std::string window_ref(HWND h) {
         DWORD pid = 0;
@@ -230,6 +270,7 @@ struct Desktop::Impl {
         return result;
     }
     ComPtr<IUIAutomationElement> element(const Json &a) {
+        ensure_automation();
         ComPtr<IUIAutomationElement> e;
         if (a.contains("elementRef")) {
             auto it = elements.find(a.at("elementRef").get<std::string>());
@@ -244,68 +285,100 @@ struct Desktop::Impl {
             check(automation->GetRootElement(&e), "GetRootElement");
         return e;
     }
-    Json describe(IUIAutomationElement *e, bool details = true) {
+    std::string element_reference(IUIAutomationElement *e, QueryMetrics* metrics) {
+        TimedPart timer{metrics ? &metrics->identityMs : nullptr};
         std::string id;
-        for (auto &[ref, old] : elements) {
-            BOOL same = FALSE;
-            if (SUCCEEDED(automation->CompareElements(e, old.Get(), &same)) && same) {
-                id = ref;
-                break;
+        std::vector<int> runtime;
+        SAFEARRAY* raw = nullptr;
+        if (metrics) ++metrics->runtimeIdLookups;
+        const auto runtimeResult = e->GetRuntimeId(&raw);
+        if (SUCCEEDED(runtimeResult) && raw && SafeArrayGetDim(raw) == 1 && SafeArrayGetElemsize(raw) == sizeof(int)) {
+            LONG first = 0, last = -1;
+            if (SUCCEEDED(SafeArrayGetLBound(raw, 1, &first)) &&
+                SUCCEEDED(SafeArrayGetUBound(raw, 1, &last)) && last >= first && int64_t(last) - int64_t(first) < 1024) {
+                for (int64_t position = first; position <= int64_t(last); ++position) {
+                    LONG index = static_cast<LONG>(position);
+                    int value = 0;
+                    if (FAILED(SafeArrayGetElement(raw, &index, &value))) { runtime.clear(); break; }
+                    runtime.push_back(value);
+                }
             }
+        }
+        if (raw) SafeArrayDestroy(raw);
+        auto candidate = runtime.empty() ? runtime_references.end() : runtime_references.find(runtime);
+        if (candidate != runtime_references.end()) {
+            auto old = elements.find(candidate->second);
+            BOOL same = FALSE;
+            if (metrics) ++metrics->identityComparisons;
+            // Runtime identifiers can be reused after a control disappears. Never retarget an old ref.
+            if (old != elements.end() && SUCCEEDED(automation->CompareElements(e, old->second.Get(), &same)) && same)
+                id = candidate->second;
         }
         if (id.empty()) {
             id = "e" + reference_prefix + std::to_string(++serial);
             elements[id] = e;
+            if (!runtime.empty()) runtime_references[runtime] = id;
         }
+        return id;
+    }
+    Json describe(IUIAutomationElement *e, bool details = true, QueryMetrics* metrics = nullptr) {
+        auto id = element_reference(e, metrics);
+        ComPtr<IUIAutomationElement> cached;
         BSTR s = nullptr;
-        check(e->get_CurrentName(&s), "element name");
-        auto name = bstr(s);
-        s = nullptr;
-        e->get_CurrentAutomationId(&s);
-        auto aid = bstr(s);
+        std::string name, aid;
         CONTROLTYPEID type = 0;
-        e->get_CurrentControlType(&type);
         RECT r{};
-        e->get_CurrentBoundingRectangle(&r);
         BOOL enabled = FALSE, off = TRUE;
-        e->get_CurrentIsEnabled(&enabled);
-        e->get_CurrentIsOffscreen(&off);
         int pid = 0;
-        e->get_CurrentProcessId(&pid);
-        Json ps = Json::array();
-        if (details) for (auto &[n, p] : patterns) {
-            ComPtr<IUnknown> obj;
-            if (SUCCEEDED(e->GetCurrentPattern(p, &obj)) && obj)
-                ps.push_back(n);
+        {
+            TimedPart timer{metrics ? &metrics->propertyMs : nullptr};
+            // Batch cross-process property retrieval. The cache lives only for this observation.
+            check(e->BuildUpdatedCache(locator_cache.Get(), &cached), "element locator snapshot");
+            check(cached->get_CachedName(&s), "element name");
+            name = bstr(s);
+            s = nullptr;
+            check(cached->get_CachedAutomationId(&s), "element automation id");
+            aid = bstr(s);
+            check(cached->get_CachedControlType(&type), "element control type");
+            check(cached->get_CachedBoundingRectangle(&r), "element bounds");
+            check(cached->get_CachedIsEnabled(&enabled), "element enabled");
+            check(cached->get_CachedIsOffscreen(&off), "element offscreen");
+            check(cached->get_CachedProcessId(&pid), "element process id");
         }
-        POINT pt{};
+        Json row = {{"elementRef", id}, {"name", name}, {"automationId", aid},
+            {"role", role(type)}, {"controlType", type}, {"pid", pid}, {"bounds", rect(r)},
+            {"enabled", bool(enabled)}, {"offscreen", bool(off)},
+            {"supportedPatterns", Json::array()}, {"value", nullptr}, {"clickablePoint", nullptr}};
+        if (details) {
+            TimedPart timer{metrics ? &metrics->propertyMs : nullptr};
+            describe_details(e, row);
+        }
+        return row;
+    }
+    void describe_details(IUIAutomationElement* e, Json& row) {
+        for (auto &[name, id] : patterns) {
+            ComPtr<IUnknown> obj;
+            if (SUCCEEDED(e->GetCurrentPattern(id, &obj)) && obj)
+                row["supportedPatterns"].push_back(name);
+        }
+        POINT point{};
         BOOL got = FALSE;
-        if (details) e->GetClickablePoint(&pt, &got);
-        Json value = nullptr;
-        if (std::find(ps.begin(), ps.end(), "value") != ps.end()) {
+        if (SUCCEEDED(e->GetClickablePoint(&point, &got)) && got)
+            row["clickablePoint"] = {{"x", point.x}, {"y", point.y}, {"source", "uia"},
+                {"coordinateSpace", "screen_physical"}};
+        if (std::find(row["supportedPatterns"].begin(), row["supportedPatterns"].end(), "value") !=
+            row["supportedPatterns"].end()) {
+            BSTR value = nullptr;
             try {
-                s = nullptr;
-                check(pattern<IUIAutomationValuePattern>(e, UIA_ValuePatternId)->get_CurrentValue(&s),
-                      "value");
-                value = bstr(s);
+                check(pattern<IUIAutomationValuePattern>(e, UIA_ValuePatternId)->get_CurrentValue(&value), "value");
+                auto text = bstr(value);
+                value = nullptr;
+                row["value"] = std::move(text);
             } catch (...) {
+                // Value and patterns are optional detail, not selector evidence.
+                if (value) SysFreeString(value);
             }
         }
-        return {
-            {"elementRef", id},
-            {"name", name},
-            {"automationId", aid},
-            {"role", role(type)},
-            {"controlType", type},
-            {"pid", pid},
-            {"bounds", rect(r)},
-            {"enabled", bool(enabled)},
-            {"offscreen", bool(off)},
-            {"supportedPatterns", ps},
-            {"value", value},
-            {"clickablePoint",
-             got ? Json{{"x", pt.x}, {"y", pt.y}, {"source", "uia"}, {"coordinateSpace", "screen_physical"}}
-                 : Json(nullptr)}};
     }
     bool matches(const Json &e, const Json &s) {
         for (auto name : {"name", "automationId", "role", "pid"})
@@ -318,6 +391,7 @@ struct Desktop::Impl {
     }
     Json query(const Json &a) {
         const auto started = std::chrono::steady_clock::now();
+        QueryMetrics metrics;
         const auto format = a.value("format", std::string("full"));
         if (format != "full" && format != "compact" && format != "locator")
             throw std::invalid_argument("format must be full, compact or locator");
@@ -338,6 +412,14 @@ struct Desktop::Impl {
         int visited = 0, matched = 0;
         bool truncated = false;
         std::string stopReason = "complete";
+        Json providerError;
+        auto recordProviderError = [&](const char* stage, const std::string& message) {
+            truncated = true;
+            stopReason = "providerError";
+            ++metrics.providerErrors;
+            // Retain the first failure; never include control names, values or tree payloads.
+            if (providerError.is_null()) providerError = {{"stage", stage}, {"message", message.substr(0, 256)}};
+        };
         auto selector = a.value("selector", Json::object());
         while (!stack.empty()) {
             if (visited >= budget || std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(timeout)) {
@@ -350,10 +432,12 @@ struct Desktop::Impl {
             stack.pop_back();
             Json row;
             try {
-                row = describe(node.e.Get(), false);
+                row = describe(node.e.Get(), false, &metrics);
+            } catch (const std::exception& error) {
+                recordProviderError("locatorSnapshot", error.what());
+                continue;
             } catch (...) {
-                truncated = true;
-                stopReason = "providerError";
+                recordProviderError("locatorSnapshot", "Unknown failure while reading locator properties");
                 continue;
             }
             row["depth"] = node.depth;
@@ -361,11 +445,10 @@ struct Desktop::Impl {
             if (matches(row, selector)) {
                 if (matched++ >= offset && rows.size() < size_t(limit)) {
                     if (format == "full") {
-                        auto detail = describe(node.e.Get());
-                        detail["depth"] = node.depth;
-                        detail["parentRef"] = node.parent;
-                        row = std::move(detail);
+                        TimedPart timer{&metrics.propertyMs};
+                        describe_details(node.e.Get(), row);
                     } else if (format == "compact") {
+                        TimedPart timer{&metrics.propertyMs};
                         BSTR value = nullptr;
                         ComPtr<IUIAutomationValuePattern> vp;
                         if (SUCCEEDED(node.e->GetCurrentPatternAs(UIA_ValuePatternId, IID_PPV_ARGS(&vp))) && vp &&
@@ -380,10 +463,15 @@ struct Desktop::Impl {
                     }
                 }
             }
+            if (std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(timeout)) {
+                truncated = true; stopReason = "timeout"; break;
+            }
             if (node.depth < depth) {
+                TimedPart timer{&metrics.traversalMs};
                 std::vector<ComPtr<IUIAutomationElement>> children;
                 ComPtr<IUIAutomationElement> child;
-                if (SUCCEEDED(walker->GetFirstChildElement(node.e.Get(), &child)))
+                const auto childResult = walker->GetFirstChildElement(node.e.Get(), &child);
+                if (SUCCEEDED(childResult))
                     while (child) {
                         if (std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(timeout)) {
                             truncated = true;
@@ -392,34 +480,58 @@ struct Desktop::Impl {
                         }
                         children.push_back(child);
                         ComPtr<IUIAutomationElement> next;
-                        if (FAILED(walker->GetNextSiblingElement(child.Get(), &next))) {
-                            truncated = true;
-                            stopReason = "providerError";
+                        const auto siblingResult = walker->GetNextSiblingElement(child.Get(), &next);
+                        if (FAILED(siblingResult)) {
+                            recordProviderError("nextSibling", "GetNextSiblingElement HRESULT=" +
+                                std::to_string(static_cast<unsigned long>(siblingResult)));
                             break;
                         }
                         child = next;
-                        if (children.size() >= size_t(budget)) {
+                        if (child && children.size() + stack.size() + size_t(visited) >= size_t(budget)) {
                             truncated = true;
                             stopReason = "nodeBudget";
                             break;
                         }
                     }
-                else { truncated = true; stopReason = "providerError"; }
+                else recordProviderError("firstChild", "GetFirstChildElement HRESULT=" +
+                    std::to_string(static_cast<unsigned long>(childResult)));
                 for (auto it = children.rbegin(); it != children.rend(); ++it)
                     stack.push_back({*it, node.depth + 1, row["elementRef"]});
+            } else {
+                // A depth boundary is not proof that the unvisited subtree contains no other matches.
+                TimedPart timer{&metrics.traversalMs};
+                ComPtr<IUIAutomationElement> child;
+                const auto childResult = walker->GetFirstChildElement(node.e.Get(), &child);
+                if (FAILED(childResult)) {
+                    recordProviderError("depthBoundary", "GetFirstChildElement HRESULT=" +
+                        std::to_string(static_cast<unsigned long>(childResult)));
+                } else if (child) {
+                    truncated = true;
+                    if (stopReason == "complete") stopReason = "depthLimit";
+                }
             }
+        }
+        if (std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(timeout)) {
+            truncated = true; stopReason = "timeout";
         }
         bool more = matched > offset + int(rows.size()) || truncated;
         Json out = {{"elements", rows},   {"matched", matched},
                     {"visited", visited}, {"truncated", truncated},
                     {"has_more", more},   {"next_offset", more ? Json(offset + rows.size()) : Json(nullptr)}};
+        out["evidenceComplete"] = !truncated && offset == 0 && matched == int(rows.size());
         out["uniqueRef"] =
             matched == 1 && !truncated && rows.size() == 1 ? rows[0]["elementRef"] : Json(nullptr);
         out["stopReason"] = stopReason;
+        if (!providerError.is_null()) out["providerError"] = std::move(providerError);
         if (a.value("metrics", false)) {
             const auto bytes = dump_json(out).size();
             out["metrics"] = {{"queryMs", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count()},
-                              {"payloadBytes", bytes}};
+                              {"payloadBytes", bytes}, {"identityMs", metrics.identityMs},
+                              {"propertyMs", metrics.propertyMs}, {"traversalMs", metrics.traversalMs},
+                              {"runtimeIdLookups", metrics.runtimeIdLookups},
+                              {"identityComparisons", metrics.identityComparisons}, {"providerErrors", metrics.providerErrors},
+                              {"retainedReferences", elements.size()}, {"connectionTimeoutMs", connection_timeout_ms},
+                              {"transactionTimeoutMs", transaction_timeout_ms}};
         }
         return out;
     }
@@ -554,6 +666,7 @@ Json Desktop::execute(const std::string &op, const Json &a) {
         throw std::invalid_argument("Unknown operation: " + op);
     if (!a.is_object())
         throw std::invalid_argument("args must be an object");
+    if (op.starts_with("ui.")) p.ensure_automation();
     if (op == "app.launch") {
         auto executable = wide(a.at("executable").get<std::string>());
         auto quote = [](const std::wstring &input) {

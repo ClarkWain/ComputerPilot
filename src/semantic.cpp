@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <map>
+#include <set>
 
 namespace dp {
 namespace {
@@ -17,6 +18,20 @@ int integer(const Json& v, int minimum, int maximum) {
 void color(const Json& value) {
     if (!value.is_array() || value.size() != 3) throw std::invalid_argument("RGB requires three channels");
     for (const auto& channel : value) integer(channel, 0, 255);
+}
+bool shallow_match_evidence(const Json& tree) {
+    return tree.is_object() && !operation_failed(tree) && tree.contains("elements") && tree.at("elements").is_array() &&
+        tree.value("stopReason", std::string{}) == "depthLimit";
+}
+std::string logical_key(const Json& e) {
+    std::string key = e.value("role", std::string{}) + "\n" + e.value("name", std::string{});
+    if (e.contains("automationId") && e.at("automationId").is_string()) key += "\n" + e.at("automationId").get<std::string>();
+    if (e.contains("bounds") && e.at("bounds").is_object()) {
+        const auto& b = e.at("bounds");
+        key += "\n" + std::to_string(b.value("x", 0)) + "," + std::to_string(b.value("y", 0)) + "," +
+            std::to_string(b.value("width", 0)) + "," + std::to_string(b.value("height", 0));
+    }
+    return key;
 }
 Json paint_polygon_vertices(const Json& input) {
     // Remove redundant samples with <= 1 canvas-pixel error. Paint can discard
@@ -52,8 +67,20 @@ struct DrawingState {
     std::string activeTool;
     bool valid = false;
 };
+bool semantic_evidence_current(const SemanticEvidence& evidence, const std::string& windowRef, const Json& window, const Json& session) {
+    bool current = evidence.windowRef == windowRef && ui_inspection_complete(evidence.tree) &&
+        !operation_failed(evidence.session) && evidence.session.value("inputDesktopAccessible",false) &&
+        evidence.session.value("lockState",std::string{}) != "locked" &&
+        evidence.session.contains("lastInputTick") && session.contains("lastInputTick") &&
+        evidence.session.at("lastInputTick") == session.at("lastInputTick");
+    for (auto key : {"windowRef","pid","dpi","bounds","className","executable","enabled","minimized","foreground"})
+        current = current && evidence.window.contains(key) && window.contains(key) &&
+            evidence.window.at(key) == window.at(key);
+    return current;
+}
 static Json run_shape(const Json& request, const Json& profile, const SemanticCall& execute,
-                  const std::function<void(int)>& sleep, bool validateOnly = false, DrawingState* sharedState = nullptr) {
+                  const std::function<void(int)>& sleep, bool validateOnly = false, DrawingState* sharedState = nullptr,
+                  const SemanticEvidence* evidence = nullptr) {
     // Validate parameters before any desktop operation.
     const auto action = request.at("action").get<std::string>();
     const std::map<std::string, std::string> tools = {
@@ -168,6 +195,11 @@ static Json run_shape(const Json& request, const Json& profile, const SemanticCa
             throw std::runtime_error("interactive_desktop_unavailable");
         desktopReady = true;
         const auto window = call("window.get", {{"windowRef", windowRef}});
+        if (evidence) {
+            // Never continue from a stale compatibility decision. A fresh execution
+            // must discover again; no setup input has happened at this point.
+            if (!semantic_evidence_current(*evidence,windowRef,window,session)) throw std::runtime_error("profile_evidence_stale");
+        }
         if (!profile_supports_dpi(profile, window.at("dpi").get<int>()) ||
             window.at("bounds").at("width").get<int>() < profile.at("minimumWindowWidth").get<int>())
             throw std::runtime_error("profile_geometry_mismatch");
@@ -188,23 +220,26 @@ static Json run_shape(const Json& request, const Json& profile, const SemanticCa
         const auto pid = window.at("pid");
         std::map<std::string, Json> trees;
         if (sharedState && !state.mainTree.is_null()) trees[windowRef] = state.mainTree;
+        if (evidence) trees[windowRef] = evidence->tree;
         auto find = [&](const Json& host, const Json& selector) {
             const auto key = host.get<std::string>();
             if (!trees.contains(key)) trees[key] = call("ui.tree", {{"windowRef", host},
-                {"depth", 20}, {"limit", 400}, {"format", "locator"}, {"queryTimeoutMs", 10000}});
+                {"depth", 16}, {"limit", 400}, {"format", "locator"}, {"queryTimeoutMs", 10000}});
             const auto& tree = trees.at(key);
-            Json refs = Json::array();
+            if (!ui_inspection_complete(tree) && !shallow_match_evidence(tree)) throw std::runtime_error("ui_inspection_incomplete");
+            size_t rawCount = 0;
+            std::map<std::string, Json> refs;
             for (const auto& e : tree.at("elements")) {
                 bool match = true;
                 for (auto it = selector.begin(); it != selector.end(); ++it) {
                     if (it.key() == "nameContains") match &= e.value("name", std::string{}).find(it.value().get<std::string>()) != std::string::npos;
                     else match &= e.contains(it.key()) && e.at(it.key()) == it.value();
                 }
-                if (match) refs.push_back(e.at("elementRef"));
+                if (match) { ++rawCount; refs[logical_key(e)] = e.at("elementRef"); }
             }
-            if (tree.value("truncated", false) || refs.size() != 1)
+            if (shallow_match_evidence(tree) ? refs.empty() : rawCount != 1)
                 throw std::runtime_error("control_not_unique: " + selector.dump());
-            return refs[0];
+            return refs.begin()->second;
         };
         const auto& selectors = profile.at("selectors");
         find(windowRef, selectors.at("zoom"));
@@ -273,6 +308,22 @@ static Json run_shape(const Json& request, const Json& profile, const SemanticCa
             const auto host = popup("");
             trees.erase(host.get<std::string>());
             click(host, find(host, selector));
+            // Some ribbon flyouts apply the selection but do not auto-dismiss; the lingering
+            // popup then occludes the next toolbar button. A clean Paint owns only its main
+            // window, so any extra visible owned window is a stray flyout: force it closed.
+            auto flyoutOpen = [&] {
+                for (const auto& wnd : call("window.list", {{"pid", pid}}).at("windows"))
+                    if (wnd.at("windowRef") != windowRef && wnd.value("visible", true)) return true;
+                return false;
+            };
+            for (int attempt = 0; attempt < 4 && flyoutOpen(); ++attempt) sleep(pollMs);
+            for (int tries = 0; tries < 3 && flyoutOpen(); ++tries) {
+                // Refocus the main window (which drops the transient flyout) and press Escape at it.
+                call("window.activate", {{"windowRef", windowRef}});
+                try { call("input.key_chord", {{"windowRef", windowRef}, {"keys", Json::array({"Escape"})}}); }
+                catch (const std::exception&) {}
+                for (int attempt = 0; attempt < 6 && flyoutOpen(); ++attempt) sleep(pollMs);
+            }
             failureHost = windowRef;
         };
         phase = "tool";
@@ -284,8 +335,10 @@ static Json run_shape(const Json& request, const Json& profile, const SemanticCa
             state.activeTool = shapeTool;
         }
         if (setFill) { menu("fill", profile.at(filled ? "solidFill" : "noFill")); state.values["fillMode"] = filled; }
-        if (setOutline) { menu("outline", profile.at("solidOutline")); state.values["outline"] = "solid"; }
+        // Set width before outline: the outline flyout overlaps the width button, so the
+        // reverse order occludes the width click. The width flyout opens clear of the outline button.
         if (setWidth) { menu("width", profile.at("widthOptions").at(std::to_string(width))); state.values["width"] = width; }
+        if (setOutline) { menu("outline", profile.at("solidOutline")); state.values["outline"] = "solid"; }
         auto setColor = [&](const std::string& slot, const Json& rgb) {
             phase = slot + "Color";
             click(windowRef, controls.at(slot));
@@ -366,6 +419,8 @@ static Json run_shape(const Json& request, const Json& profile, const SemanticCa
         Json result = {{"status", "error"}, {"phase", phase}, {"drawAttempted", drawn},
             {"nativeCalls", calls}, {"message", error.what()},
             {"dispatch",drawn?"possibly_partial":"not_started"},{"retryable",!drawn}};
+        if (std::string(error.what()) == "profile_evidence_stale" || std::string(error.what()) == "ui_inspection_incomplete")
+            result["code"] = error.what();
 
         if (desktopReady && request.contains("failureScreenshot")) {
             try {
@@ -380,11 +435,11 @@ static Json run_shape(const Json& request, const Json& profile, const SemanticCa
     }
 }
 Json run_semantic(const Json& request, const Json& profile, const SemanticCall& execute,
-                  const std::function<void(int)>& sleep) {
+                  const std::function<void(int)>& sleep, const SemanticEvidence* evidence) {
     const auto action = request.at("action").get<std::string>();
-    if (action == "document.saveAs" || action == "drawing.selectBrush") return run_app_semantic(request, profile, execute, sleep);
+    if (action == "document.saveAs" || action == "drawing.selectBrush") return run_app_semantic(request, profile, execute, sleep, false, evidence);
     if (action != "drawing.drawScene")
-        return run_shape(request, profile, execute, sleep);
+        return run_shape(request, profile, execute, sleep, false, nullptr, evidence);
     const auto& args = request.at("args");
     Json items = args.at("items");
     if (!items.is_array() || items.empty() || items.size() > 256)
@@ -415,7 +470,7 @@ Json run_semantic(const Json& request, const Json& profile, const SemanticCall& 
         if (completed && interval) sleep(interval);
         const bool app=child["action"]=="document.saveAs" || child["action"]=="drawing.selectBrush";
         if(app)state=DrawingState{};
-        auto result = app ? run_app_semantic(child,profile,execute,sleep) : run_shape(child, profile, execute, sleep, false, reuseState ? &state : nullptr);
+        auto result = app ? run_app_semantic(child,profile,execute,sleep,false,completed == 0 ? evidence : nullptr) : run_shape(child, profile, execute, sleep, false, reuseState ? &state : nullptr, completed == 0 ? evidence : nullptr);
         calls += result.value("nativeCalls", size_t{0});
         drawAttempted |= result.value("drawAttempted", result.value("status", std::string{}) == "ok");
         if (operation_failed(result)) {

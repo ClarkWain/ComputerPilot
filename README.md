@@ -56,7 +56,7 @@ pwsh -NoProfile -File skills/desktoppilot/scripts/install.ps1 -Update
 
 ## 语义操作：根据实际窗口选 profile
 
-先调用 `get_window_state`，读取 `semantic.profiles`。只有匹配当前进程、窗口类、DPI、布局和关键控件的 profile 才出现在可用列表中。唯一匹配时可省略 `profile`；有多个时选择其中一个；没有匹配时先根据原因修正可恢复的窗口/缩放条件并重新观察，确认无法适配后再使用 `execute_batch`。显式传入 profile 也不能跳过匹配检查。
+先调用 `get_window_state`，读取 `semantic.profiles`。只有匹配当前进程、窗口类、DPI、布局和关键控件的 profile 才出现在可用列表中。唯一匹配时可省略 `profile`；有多个时选择其中一个；没有匹配时先根据原因修正可恢复的窗口/缩放条件并重新观察，检查失败或无法适配时，用 `mode:image` 获取新截图并使用 `execute_batch`。显式传入 profile 也不能跳过匹配检查。
 
 例如，在返回了经典中文版 Paint profile 的窗口内画两个圆：
 
@@ -74,7 +74,7 @@ pwsh -NoProfile -File skills/desktoppilot/scripts/install.ps1 -Update
 
 ## 能力与边界
 
-- 截图按需返回，整窗最长边 1600，默认 WebP；基础操作自动转换截图坐标，局部检查使用无损截图。PNG-only 宿主配置 `DP_IMAGE_FORMAT=png`。
+- 截图按需返回，整窗最长边 1600，默认 PNG（对模型宿主兼容性最好）；基础操作自动转换截图坐标，局部检查使用无损截图。确认宿主支持 WebP 时配置 `DP_IMAGE_FORMAT=webp` 以减少字节。
 - Paint 的密集多边形会在最多一画布像素误差内去除冗余顶点并选择较长起始边。小多边形仍有部分绘制失败的已知案例，不能用于严格逐像素复刻。执行器报告动作执行情况；整批完成后由 Agent 查看截图，判断绘制结果和质量。
 - 单击 control_id 时优先调用控件的 Invoke 能力；不支持才使用前台指针。仍需前台输入的路径自动恢复焦点，但不承诺任意后台绘图。模态弹窗和持续遮挡返回具体阻塞，不盲目重放。
 - 内部 `app.launch` 对新建且唯一匹配 profile 的窗口应用 recommendedWindow 尺寸，并限制在工作区内；已有窗口观察时不自动调整。

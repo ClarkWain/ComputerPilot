@@ -103,31 +103,15 @@ Json Service::perform(const std::string &op, const Json &args) {
     if (op == "semantic.profiles") {
         Json inspection;
         auto result=discover_profiles(profiles_directory(),args.at("windowRef"),
-            [&](const std::string& operation,const Json& parameters){
-                auto r=execute(operation,parameters);if(operation=="ui.tree")inspection=r;return r;});
+            [&](const std::string& operation,const Json& parameters){return execute(operation,parameters);},&inspection);
         if(args.value("includeControls",false)&&!inspection.is_null())result["inspection"]=inspection;
         return result;
     }
     if (op == "semantic.execute")
         return execute_profile_actions(profiles_directory(),args,
-            [&](const std::string& operation,const Json& parameters){return execute(operation,parameters);});
-    if (op == "semantic.perform") {
-        std::ifstream file(path(args.at("profile").get<std::string>()));
-        if (!file) throw std::invalid_argument("Cannot open semantic profile");
-        auto profile = Json::parse(file);
-        auto semanticArgs = args;
-        if (!semanticArgs.contains("failureScreenshot")) {
-            semanticArgs["failureScreenshot"] = utf8((std::filesystem::temp_directory_path() /
-                (L"desktop-pilot-failure-" + std::to_wstring(std::chrono::steady_clock::now().time_since_epoch().count()) + L".png")).wstring());
-        } else if (semanticArgs["failureScreenshot"] == false) semanticArgs.erase("failureScreenshot");
-        return run_semantic(semanticArgs, profile,
-            [&](const std::string& operation, const Json& parameters) {
-                auto bound=parameters;
-                if((operation.starts_with("input.")||operation=="ui.fill") && bound.contains("windowRef"))bound["autoActivate"]=true;
-                return execute(operation,bound);
-            },
-            [](int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); });
-    }
+            [&](const std::string& operation,const Json& parameters){return execute(operation,parameters);},
+            [&](const Json& request,const SemanticEvidence& evidence){return perform_semantic(request,&evidence);});
+    if (op == "semantic.perform") return perform_semantic(args);
     if (op == "action.status") {
         auto found = receipts_.find(args.at("id").get<std::string>());
         if (found == receipts_.end())
@@ -285,5 +269,22 @@ Json Service::perform(const std::string &op, const Json &args) {
     }
     result["elements"] = fuse_text(detected.detections, recognized.lines, image_ref);
     return result;
+}
+Json Service::perform_semantic(const Json& args, const SemanticEvidence* evidence) {
+    std::ifstream file(path(args.at("profile").get<std::string>()));
+    if (!file) throw std::invalid_argument("Cannot open semantic profile");
+    auto profile = Json::parse(file);
+    auto semanticArgs = args;
+    if (!semanticArgs.contains("failureScreenshot")) {
+        semanticArgs["failureScreenshot"] = utf8((std::filesystem::temp_directory_path() /
+            (L"desktop-pilot-failure-" + std::to_wstring(std::chrono::steady_clock::now().time_since_epoch().count()) + L".png")).wstring());
+    } else if (semanticArgs["failureScreenshot"] == false) semanticArgs.erase("failureScreenshot");
+    return run_semantic(semanticArgs, profile,
+        [&](const std::string& operation, const Json& parameters) {
+            auto bound=parameters;
+            if((operation.starts_with("input.")||operation=="ui.fill") && bound.contains("windowRef"))bound["autoActivate"]=true;
+            return execute(operation,bound);
+        },
+        [](int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }, evidence);
 }
 } // namespace dp

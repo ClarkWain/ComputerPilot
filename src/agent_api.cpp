@@ -70,14 +70,22 @@ Json AgentApi::tools() {
     };
     add("list_windows","List all open windows. No parameters. Read the returned titles and pids to identify the intended window_id; does not activate or resize.",objectSchema(Json::object()),true);
     auto region=objectSchema({{"x",{{"type","integer"},{"minimum",0}}},{"y",{{"type","integer"},{"minimum",0}}},{"width",{{"type","integer"},{"minimum",1}}},{"height",{{"type","integer"},{"minimum",1}}}},{"x","y","width","height"});
-    add("get_window_state","Get controls by default; mode:image/both adds a screenshot capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.",objectSchema({{"window_id",s},{"mode",{{"type","string"},{"enum",{"controls","image","both"}},{"default","controls"}}},{"region",region},{"activate",{{"type","boolean"},{"default",true}}}},{"window_id"}),false);
+    add("get_window_state","Get controls and semantic profiles by default. mode:image skips UI Automation and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.",objectSchema({{"window_id",s},{"mode",{{"type","string"},{"enum",{"controls","image","both"}},{"default","controls"}}},{"region",region},{"activate",{{"type","boolean"},{"default",true}}}},{"window_id"}),false);
     auto semanticAction=objectSchema({{"action",s},{"args",{{"type","object"}}}},{"action","args"});
     add("execute_semantic","PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Native execution manages controls, colors, focus and waits. Stops on failure; inspect the result before retrying.",objectSchema({{"window_id",s},{"profile",s},{"actions",{{"type","array"},{"items",semanticAction},{"minItems",1},{"maxItems",256}}}},{"window_id","actions"}),false);
     add("execute_batch","Execute basic actions on the last observed window. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.",objectSchema({{"window_id",s},{"actions",{{"type","array"},{"items",actionSchema},{"minItems",1},{"maxItems",256}}}},{"window_id","actions"}),false);
     return rows;
 }
-Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& dispatch) {
+Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& externalDispatch) {
     try {
+        auto dispatch=[&](const std::string& operation,const Json& args) {
+            auto result=externalDispatch(operation,args);
+            if(result.value("referencesInvalidated",false)) {
+                observations_.clear();targets_.clear();
+                result["next"]="Worker references were invalidated. Call list_windows, then get_window_state mode:image with the new id. Inspect any prior input outcome before continuing; do not replay actions.";
+            }
+            return result;
+        };
         // Focus recovery is executor work, not an extra agent planning step.
         auto prepareWindow=[&](const std::string& windowId)->Json {
             auto w=dispatch("window.get",{{"windowRef",windowId}});
@@ -122,28 +130,64 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& dispat
                 {"foreground",w.value("foreground",false)},{"coordinateSpace","window_relative_physical_pixels"},
                 {"size",{{"width",w["bounds"]["width"]},{"height",w["bounds"]["height"]}}},
                 {"next","Prefer execute_semantic if a profile matches; otherwise execute_batch. Inspect again to verify the result."}};
-            auto profiles=dispatch("semantic.profiles",{{"windowRef",window_id},{"includeControls",mode!="image"}});
+            // A screenshot must remain available when UI Automation is slow or broken.
+            // An empty unchecked catalog is not evidence that an application is incompatible.
+            Json profiles={{"status","not_checked"},{"profiles",Json::array()},{"unavailable",Json::array()},
+                {"next","Image-only observation skips UI Automation. Use controls/both to discover semantic actions, or execute_batch from this screenshot."}};
+            if(mode!="image") profiles=dispatch("semantic.profiles",{{"windowRef",window_id},{"includeControls",true},{"providerTimeoutMs",8000}});
+            if(profiles.value("referencesInvalidated",false)) {
+                return profiles;
+            }
             if(mode!="image") {
-                auto tree=profiles.contains("inspection")?profiles["inspection"]:dispatch("ui.tree",{{"windowRef",window_id},{"format","compact"},{"depth",6},{"limit",80},{"nodeBudget",1500},{"queryTimeoutMs",3000}});
-                if(operation_failed(tree))return tree;
+                auto tree=operation_failed(profiles)?profiles:(profiles.contains("inspection")?profiles["inspection"]:dispatch("ui.tree",{{"windowRef",window_id},{"format","compact"},{"depth",6},{"limit",80},{"nodeBudget",1500},{"queryTimeoutMs",3000},{"providerTimeoutMs",5000}}));
+                if(tree.value("referencesInvalidated",false)) {
+                    return tree;
+                }
+                if(!operation_failed(tree) && (!tree.contains("elements") || !tree.at("elements").is_array()))
+                    tree={{"status","error"},{"code","invalid_inspection_result"},{"message","UI inspection did not return an elements array."}};
+                const bool failed=operation_failed(tree);
+                if(failed && mode=="controls") {
+                    tree["next"]="UI inspection failed. Use get_window_state mode:image and execute_batch from visible evidence; do not repeat the same scan unchanged.";
+                    return tree;
+                }
                 result["controls"]=Json::array();result["truncated"]=tree.value("truncated",false);
-                for(auto e:tree.at("elements")) {
+                const bool incomplete=!ui_inspection_complete(tree);
+                result["inspection"]={{"status",failed?"error":incomplete?"incomplete":"ok"}};
+                for(auto key:{"stopReason","visited","truncated","has_more","evidenceComplete","metrics","message","code","providerError"})
+                    if(tree.contains(key))result["inspection"][key]=tree[key];
+                if(failed) {
+                    result["truncated"]=true;
+                    result["next"]="UI inspection failed; screenshot remains available. Use execute_batch from visible evidence instead of repeating the same scan.";
+                }
+                else if(incomplete) result["next"]="UI inspection is incomplete. Use mode:image if needed, then execute_batch from visible evidence; do not repeat unchanged scans.";
+                // Cap oversized text (e.g. an editor buffer exposed as a control name/value) to bound tokens.
+                auto cap=[](std::string s,size_t limit)->std::string{
+                    if(s.size()<=limit)return s;
+                    size_t cut=limit;
+                    while(cut>0&&(static_cast<unsigned char>(s[cut])&0xC0)==0x80)--cut;
+                    return s.substr(0,cut)+"…[+"+std::to_string(s.size()-cut)+"]";
+                };
+                for(auto e:failed?Json::array():tree.at("elements")) {
                     if(!e.contains("elementRef"))continue;
                     if(e.value("name",std::string{}).empty()&&(e.value("role",std::string{})=="Pane"||e.value("role",std::string{})=="Window"))continue;
                     if(result["controls"].size()>=80){result["truncated"]=true;break;}
                     auto ref=e.at("elementRef").get<std::string>();o.controls[ref]=e;
-                    Json c={{"control_id",ref},{"name",e.value("name",std::string{})},{"role",e.value("role",std::string{})}};
-                    for(auto key:{"value","enabled","offscreen"})if(e.contains(key))c[key]=e[key];
+                    Json c={{"control_id",ref},{"name",cap(e.value("name",std::string{}),256)},{"role",e.value("role",std::string{})}};
+                    for(auto key:{"value","enabled","offscreen"})if(e.contains(key))
+                        c[key]=(std::string(key)=="value"&&e[key].is_string())?Json(cap(e[key].get<std::string>(),2048)):e[key];
                     if(e.contains("bounds")&&e["bounds"].is_object()) {
-                        c["bounds"]=e["bounds"];c["bounds"]["x"]=e["bounds"]["x"].get<int>()-w["bounds"]["x"].get<int>();
-                        c["bounds"]["y"]=e["bounds"]["y"].get<int>()-w["bounds"]["y"].get<int>();c["bounds"]["coordinateSpace"]="window_relative";
+                        c["bounds"]=Json::array({
+                            e["bounds"]["x"].get<int>()-w["bounds"]["x"].get<int>(),
+                            e["bounds"]["y"].get<int>()-w["bounds"]["y"].get<int>(),
+                            e["bounds"]["width"].get<int>(),
+                            e["bounds"]["height"].get<int>()});
                     }
                     result["controls"].push_back(c);
                 }
             }
             if(mode!="controls") {
                 const char* format=std::getenv("DP_IMAGE_FORMAT");
-                const bool webp=webp_available()&&(!format||std::string(format)!="png");
+                const bool webp=webp_available()&&format&&std::string(format)=="webp";
                 auto path=std::filesystem::temp_directory_path()/std::filesystem::u8path("desktop-pilot-observe-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())+(webp?".webp":".png"));
                 Json captureArgs={{"windowRef",window_id},{"method","screen"},{"output",utf8(path.wstring())},{"maxEdge",1600}};
                 if(a.contains("region")) {fields(a["region"],{"x","y","width","height"});captureArgs["region"]=a["region"];captureArgs["lossless"]=true;}
@@ -260,9 +304,15 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& dispat
                     if(r.is_null()) {attempted=true;r=dispatch(step["operation"],step["args"]);}
                 }
             } catch(const std::exception& e){r={{"status","error"},{"message",e.what()}};}
-            if(operation_failed(r))return {{"status","error"},{"code","action_failed"},{"completed",completed},{"failedIndex",completed},
+            if(operation_failed(r)) {
+                Json result={{"status","error"},{"code","action_failed"},{"completed",completed},{"failedIndex",completed},
                 {"dispatch",r.value("dispatch",std::string(attempted?"unknown":"not_started"))},{"error",r},
                 {"next","get_window_state; inspect failed action outcome before submitting only unfinished actions. No rollback."}};
+                if(r.value("referencesInvalidated",false)) {
+                    result["referencesInvalidated"]=true;result["next"]=r.at("next");
+                }
+                return result;
+            }
             if(step["operation"]=="ui.fill")++fieldsVerified;
             ++completed;attempted=false;
         }

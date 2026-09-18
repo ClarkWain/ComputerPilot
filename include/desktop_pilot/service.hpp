@@ -10,12 +10,20 @@ inline bool operation_failed(const Json &value) {
         value.value("status", std::string{}) == "partial" ||
         value.value("verification", std::string{}) == "failed");
 }
+inline bool ui_inspection_complete(const Json& value) {
+    return value.is_object() && !operation_failed(value) &&
+        value.contains("elements") && value.at("elements").is_array() &&
+        !value.value("truncated", false) && !value.value("has_more", false) &&
+        value.value("evidenceComplete", true);
+}
+struct SemanticEvidence;
 class Service {
 public:
     Json execute(const std::string& operation,const Json& args);
     static bool read_only(const std::string& operation);
 private:
     Json perform(const std::string& operation,const Json& args);
+    Json perform_semantic(const Json& args, const SemanticEvidence* evidence = nullptr);
     std::map<std::string,std::pair<Json,Json>> receipts_;
     Desktop desktop_;
     std::unique_ptr<Detector> detector_;

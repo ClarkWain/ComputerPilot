@@ -9,8 +9,8 @@
 以画红圆为例，Agent 只提交圆心、半径、填充和描边；程序验证当前应用，定位画布和椭圆工具，按需设置颜色、填充、描边，换算坐标，拖动绘制并提交图形。同批次后续圆沿用已确认的设置；菜单和颜色框等已知界面由执行器处理。
 
 1. list_windows 无参数列出全部窗口，Agent 辨认目标。
-2. get_window_state 读取画面和 semantic.profiles；查看可用动作及其坐标说明。
-3. 根据动作 example 组织参数。唯一匹配省略 profile，多项匹配指定返回的 ID；没有匹配先修正已报告的可恢复条件并重新观察，确认无法适配后再使用基础操作。
+2. get_window_state(mode:both) 读取画面和 semantic.profiles；查看可用动作及其坐标说明。
+3. 根据动作 example 组织参数。唯一匹配省略 profile，多项匹配指定返回的 ID；没有匹配先修正已报告的可恢复条件并重新观察，检查未完成或无法适配时，获取新截图并使用基础操作。
 4. execute_semantic 重新检查 profile，校验全部动作参数，然后执行；失败即停止，不回滚已完成内容。
 5. 读取 completed、verification 或 failure，再获取新状态核验实际效果。派发完成不等于画面正确。
 
@@ -88,6 +88,16 @@ brush 可取 `brush`、`calligraphy1`、`calligraphy2`、`airbrush`、`oil`、`c
 
 ## 批次、复用与失败
 
+### 检查完整性与故障恢复
+
+匹配使用的控件证据必须完整：provider 错误、时间预算耗尽、节点预算耗尽、深度截断和输出分页均不能证明唯一性。查询返回 `evidenceComplete`；`truncated` / `has_more` 或 `evidenceComplete:false` 都会阻止语义执行。不得以“目前已经找到一个”为由跳过剩余范围的唯一性验证。
+
+`profile_inspection_incomplete` 表示尚未完成兼容性检查；`profile_not_matched` 表示当前检查没有匹配项。前者应读取 inspection 的停止原因、providerError 和 metrics，随后用 `get_window_state(mode:image)` 获取不依赖 UIA 的截图，根据可见证据执行基础操作，不原样重试扫描或调整窗口。worker 被终止时，先重新枚举获取有效引用。
+
+一次 `execute_semantic` 内的发现结果通过内部类型传给执行器，不接受客户端提供的控件快照，也不信任之前 `get_window_state` 的树。首项动作复核窗口身份、布局、DPI、可用状态、焦点与输入时间；不一致返回 `profile_evidence_stale`，不执行设置或绘图输入。首项绘图复用刚验证的树，后续仍遵循批次状态的失效规则。该检查不等于应用 UI 的原子快照，动作定位和最终画面仍须验证。
+
+查询的 `metrics` 区分身份查找、属性读取、树遍历耗时和身份比较次数。Runtime ID 只用于索引候选，复用引用前仍比较控件身份；属性由本次 UIA 缓存请求批量读取，不跨观察缓存属性。控件引用在 worker 会话内保留，重启释放；`retainedReferences` 可用于观察长期会话增长。
+
 actions 可混合图形、文字、刷子选择和保存，最多 256 项。所有参数在首个语义输入前校验；运行时的控件/文件变化仍可能使后续项失败。外层 profile 匹配是只读检查，获取窗口状态和执行入口可自动激活窗口。
 
 连续图形共用布局、控件定位及样式状态。用户介入、窗口变化、工具变化或不兼容的动作会使相关缓存失效。文字、刷子或保存导致界面变化时重新定位。连续路径复用普通刷子及颜色/粗细，不再展开成独立直线；切换到其他形状工具时重新确认样式。
@@ -118,7 +128,7 @@ unavailable 的元素包含 id 和 reasons，例如 dpi_mismatch、toolbar_too_n
 | match.className | 顶层窗口类名，精确比较，如 MSPaintApp |
 | match.requiredSelectors | selectors 中的键名数组；完整 UI 查询中每个必须恰好匹配一个可用且可见控件 |
 | dpi / supportedDpi | dpi 是旧配置的单值；提供 supportedDpi 数组时以其中允许的值为准。当前 Paint 为 [96,144]，并在执行时校准工具栏尺寸与画布比例 |
-| minimumWindowWidth | 窗口物理像素宽度下限，避免工具栏折叠导致布局不匹配 |
+| minimumWindowWidth | 窗口宽度下限，按 DPI 缩放为 `minimumWindowWidth × dpi/96` 物理像素；高 DPI 下防止功能区图库折叠导致布局不匹配（太窄时报 toolbar_too_narrow） |
 | selectors | 命名控件定位对象；nameContains 为包含匹配，其余键如 name/role/automationId 为精确匹配 |
 | actions | 动作目录数组，每项含 action、description、example；只列 C++ 已实现并经适配的动作 |
 | 适配器专属字段 | 当前 Paint 还使用 referenceToolSize、canvasInset、菜单选项、RGB 字段、brushes、save、clickSettleMs 等；按实际实现定义，不是通用操作指令 |

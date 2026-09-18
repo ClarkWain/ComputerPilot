@@ -4,6 +4,8 @@
 #include <iostream>
 #include <map>
 #include <stdexcept>
+#include <algorithm>
+#include <vector>
 using dp::Json;
 void require(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
 int main(int argc, char** argv) {
@@ -225,6 +227,22 @@ int main(int argc, char** argv) {
         rgbWrites = menuClicks = 0;
         auto unfilled = dp::run_semantic(emptyFill, profile, observed, [](int) {});
         require(unfilled["status"] == "ok" && rgbWrites == 0 && menuClicks == 1, "null fill did not explicitly disable fill");
+        // Regression (Bug A): the width menu must be opened before the outline menu, because the
+        // outline flyout overlaps the width button and would occlude a later width click.
+        {
+            std::vector<std::string> menuOrder;
+            auto orderMock = [&](const std::string& op, const Json& args) {
+                auto r = mock(op, args);
+                if (op == "input.click" && (lastRef == "\xE7\xB2\x97\xE7\xBB\x86" || lastRef == "\xE8\xBD\xAE\xE5\xBB\x93"))
+                    menuOrder.push_back(lastRef);
+                return r;
+            };
+            draws = 0;
+            auto ordered = dp::run_semantic(request, profile, orderMock, [](int) {});
+            require(ordered["status"] == "ok" && draws == 1, "stroke shape with width and outline failed to draw");
+            require(menuOrder.size() == 2 && menuOrder[0] == "\xE7\xB2\x97\xE7\xBB\x86" && menuOrder[1] == "\xE8\xBD\xAE\xE5\xBB\x93",
+                "Bug A: width menu must be configured before the outline menu");
+        }
         auto stars = scene; stars["args"] = {{"items",Json::array()}};
         for (int i=0; i<3; ++i) stars["args"]["items"].push_back({{"action",request["action"]},{"args",request["args"]}});
         auto cachedProfile = profile;
@@ -255,6 +273,48 @@ int main(int argc, char** argv) {
         };
         auto located=dp::run_semantic(stars,profile,counted,[](int){});
         require(located["status"]=="ok" && mainTrees==1,"scene did not reuse main control tree");
+        auto evidenceMock=[&](const std::string& op,const Json& a)->Json {
+            auto r=counted(op,a);
+            if(op=="window.get") {
+                r["windowRef"]="window";r["className"]="MSPaintApp";r["executable"]="mspaint.exe";
+                r["enabled"]=true;r["minimized"]=false;
+            }
+            return r;
+        };
+        dp::SemanticEvidence evidence;
+        evidence.windowRef="window";
+        evidence.window=evidenceMock("window.get",{{"windowRef","window"}});
+        evidence.session=evidenceMock("system.session",Json::object());
+        evidence.tree=evidenceMock("ui.tree",{{"windowRef","window"}});
+        mainTrees=0;
+        auto reused=dp::run_semantic(stars,profile,evidenceMock,[](int){},&evidence);
+        require(reused["status"]=="ok"&&mainTrees==0,"execution discovery tree was scanned again");
+        const int beforeStale=draws;
+        for(auto field:{"windowRef","pid","dpi","bounds","className","executable","enabled","minimized","foreground"}) {
+            auto stale=evidence;stale.window[field]=nullptr;
+            auto refused=dp::run_semantic(bare,profile,evidenceMock,[](int){},&stale);
+            require(refused["status"]=="error"&&refused["message"]=="profile_evidence_stale"&&draws==beforeStale,"stale discovery fingerprint dispatched input");
+        }
+        auto stale=evidence;stale.session["lastInputTick"]=41;
+        auto refused=dp::run_semantic(bare,profile,evidenceMock,[](int){},&stale);
+        require(refused["message"]=="profile_evidence_stale"&&draws==beforeStale,"external input did not invalidate discovery");
+        stale=evidence;stale.tree["has_more"]=true;
+        refused=dp::run_semantic(bare,profile,evidenceMock,[](int){},&stale);
+        require(refused["message"]=="profile_evidence_stale"&&draws==beforeStale,"incomplete typed evidence was trusted");
+        auto paged=[&](const std::string& op,const Json& a)->Json {
+            auto r=evidenceMock(op,a);if(op=="ui.tree")r["has_more"]=true;return r;
+        };
+        refused=dp::run_semantic(bare,profile,paged,[](int){});
+        require(refused["message"]=="ui_inspection_incomplete"&&draws==beforeStale,"drawing uniqueness accepted paginated controls");
+        for(bool omitElements:{false,true}) {
+            auto incomplete=[&](const std::string& op,const Json& a)->Json {
+                auto r=evidenceMock(op,a);
+                if(op=="ui.tree") {r["evidenceComplete"]=false;if(omitElements)r.erase("elements");}
+                return r;
+            };
+            refused=dp::run_semantic(bare,profile,incomplete,[](int){});
+            require(refused["code"]=="ui_inspection_incomplete"&&draws==beforeStale,"missing or partial query evidence lost its diagnostic");
+        }
         auto textRequest=bare;
         textRequest["action"]="drawing.drawText";
         textRequest["args"]={{"position",{100,100}},{"size",{300,100}},{"text","hello"}};
@@ -307,13 +367,53 @@ int main(int argc, char** argv) {
             return {{"status","ok"}};
         };
         auto brush=invalidBrush;brush["args"]["brush"]="watercolor";
+        auto staleAppEvidence=evidence;staleAppEvidence.session["lastInputTick"]=41;
+        auto appRefused=dp::run_semantic(brush,profile,evidenceMock,[](int){},&staleAppEvidence);
+        require(appRefused["code"]=="profile_evidence_stale"&&appRefused["dispatch"]=="not_started","first app action trusted stale discovery");
         auto brushResult=dp::run_semantic(brush,profile,appMock,[](int){});
         require(brushResult["status"]=="ok" && brushChosen,"brush was not verified");
+        // Regression (Bug C): a stale-open brush gallery makes the first 刷子 click close it
+        // (no popup), so selectBrush must re-open the gallery once before timing out.
+        {
+            bool cPopup=false, cChosen=false; int cBtnClicks=0;
+            auto retryMock=[&](const std::string& op,const Json& a)->Json {
+                if(op=="system.session") return {{"inputDesktopAccessible",true},{"lockState","unlocked"}};
+                if(op=="window.get") return {{"pid",1},{"foreground",true},{"bounds",{{"x",0},{"y",0}}}};
+                if(op=="window.list") return {{"windows", cPopup?Json::array({{{"windowRef","popup"},{"foreground",true}}}):Json::array()}};
+                if(op=="ui.find") {
+                    if(a.at("selector").value("role",std::string{})=="Pane") return {{"elements",cChosen?Json::array({{{"elementRef","canvas"}}}):Json::array()}};
+                    return {{"elements",Json::array({{{"elementRef","control"}}})}};
+                }
+                if(op=="ui.get") return {{"bounds",{{"x",1},{"y",1},{"width",20},{"height",20}}}};
+                if(op=="input.click") {
+                    if(!cPopup && !cChosen) { if(++cBtnClicks>=2) cPopup=true; }
+                    else if(cPopup) { cPopup=false; cChosen=true; }
+                    return {{"status","ok"}};
+                }
+                return {{"status","ok"}};
+            };
+            auto retried=dp::run_semantic(brush,profile,retryMock,[](int){});
+            require(retried["status"]=="ok" && cChosen && cBtnClicks>=2,
+                "Bug C: selectBrush did not re-open the gallery after a stale first click");
+        }
         saving=true;
         auto saveRequest=Json{{"action","document.saveAs"},{"windowRef","window"},
             {"args",{{"path",dp::utf8(savePath.wstring())}}}};
         auto saveResult=dp::run_semantic(saveRequest,profile,appMock,[](int){});
         require(saveResult["status"]=="ok" && saveResult["verification"]=="png_decoded","saved PNG not verified");
+        // Regression (Bug D): forward-slash paths must be normalized to backslashes before typing,
+        // because the Windows save dialog rejects '/'. The typed filename must contain no '/'.
+        std::filesystem::remove(savePath);
+        {
+            std::string fwdPath = dp::utf8(savePath.wstring());
+            std::replace(fwdPath.begin(), fwdPath.end(), '\\', '/');
+            fileValue.clear();
+            auto fwd = Json{{"action","document.saveAs"},{"windowRef","window"},{"args",{{"path",fwdPath}}}};
+            auto fwdResult = dp::run_semantic(fwd, profile, appMock, [](int){});
+            require(fwdResult["status"]=="ok", "forward-slash save failed");
+            require(!fileValue.empty() && fileValue.find('/')==std::string::npos,
+                "Bug D: forward-slash path not normalized before typing into the save dialog");
+        }
         rejected=false;calls=0;
         try {dp::run_semantic(saveRequest,profile,locked,[](int){});} catch(const std::invalid_argument&) {rejected=true;}
         require(rejected && calls==0,"existing save target touched desktop");

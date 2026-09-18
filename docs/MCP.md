@@ -17,15 +17,21 @@ DesktopPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state`
 | 工具 | 输入 | 输出 |
 |---|---|---|
 | list_windows | 无参数，arguments 为 `{}`；列出全部窗口 | windows 数组，每项 window_id/title/pid |
-| get_window_state | window_id；mode 默认 controls；activate 默认 true；可选 region | 控件、按需截图、semantic.profiles 与不匹配原因 |
+| get_window_state | window_id；mode 默认 controls；activate 默认 true；可选 region | controls/both 返回控件与语义检查；image 只截图，semantic.status=not_checked |
 | execute_semantic | window_id、actions；可选 profile ID | 所选 profile、完成数、验证情况；失败时附错误及可用截图 |
 | execute_batch | window_id、actions | 完成数、字段回读情况；失败时 failedIndex、error |
 
 `actions` 接受 1–256 项。单项和多项使用同一个入口。语义项是 `{action,args}`；基础项是 `{type,...}`。两者分别表达应用意图与基础输入，不把底层操作注册表暴露给 Agent。
 
-`get_window_state` 返回当前匹配 profile 的动作示例，而不是把所有应用参数塞进工具 schema。执行语义前再做一次匹配：唯一匹配可自动选；多个必须明确选；零个不能执行；已适配应用优先修正返回的窗口宽度/缩放等条件并重新观察，无法适配时再用基础操作；显式指定也不能绕过条件。
+`get_window_state` 返回当前匹配 profile 的动作示例，而不是把所有应用参数塞进工具 schema。执行语义前再做一次匹配：唯一匹配可自动选；多个必须明确选；零个不能执行；已适配应用优先修正返回的窗口宽度/缩放等条件并重新观察，无法适配或检查未完成时，根据新截图使用基础操作；显式指定也不能绕过条件。
 
 窗口焦点、观察状态与控件引用校验由执行器负责。Agent 需要判断环境结果、明确目标、依据观察执行并验收；自动检查报错后不能继续发送动作。不传 `state_id`，不插入激活动作。`activate:false` 仅用于后台只读诊断。
+
+`mode:image` 完全跳过 UI Automation 和语义发现，适用于画布验收及 UIA 故障后的基础操作。返回 `semantic.status:not_checked`，不能将空 profiles 解释成不兼容。`mode:both` 在可恢复的 UIA 查询失败时保留截图，错误放在 `inspection`；若 worker 被终止并返回 `referencesInvalidated:true`，先重新 `list_windows`，再使用新 window_id 截图。
+
+观察阶段 profile 扫描的 worker 上限为 8 秒，普通控件扫描为 5 秒；内部 queryTimeoutMs 是遍历软预算，不能中断单次阻塞的 UIA 调用。进程隔离超时会失效该 worker 的引用，不自动重放输入。
+
+UIA 按需初始化，使用 `IUIAutomation2` 配置并回读连接、事务超时（各 2000 ms），配置失败时明确报告 UIA 不可用，不阻断纯截图。它们是 [provider 单次请求超时](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomation2-put_transactiontimeout)，不是整次查询的硬性 2 秒上限。语义批次仍有独立的 600 秒总预算；COM/进程故障最终由 worker 隔离处理。
 
 ## 调用方式
 
@@ -39,7 +45,7 @@ MCP 宿主直接调用四个工具，Agent 阅读返回值决定下一步。没�
 
 省略 hold 只移动；指定 left/right/middle 时在首点按下、沿路径移动并在末点松开。points 是 1–4096 个 `[x,y]`，按住时至少两点。坐标遵循最近观察的 coordinateSpace：有截图直接使用 image_pixels，仅 controls 使用窗口物理像素；程序自动映射截图缩放与裁剪偏移。语义画布坐标不受截图缩放影响。整条路径是一个动作，delay_ms 仅在动作前等待。
 
-截图默认 WebP、最长边 1600，不为缩图调整用户窗口。局部 region 为窗口相对物理像素，采用无损编码；缩小前文件由 originalPath 保留。PNG-only 宿主在 MCP 服务 env 设置 `DP_IMAGE_FORMAT=png`；未协商的宿主格式支持无法自动推断。WebP 主要减少字节量，视觉 token 是否降低取决于模型与图片尺寸。
+截图默认 PNG、最长边 1600，不为缩图调整用户窗口。PNG 兼容所有模型宿主；MCP 无图像格式协商，WebP 在部分宿主（例如经 Copilot 转发到 Claude）会被拒绝，故不作默认。局部 region 为窗口相对物理像素，采用无损编码；缩小前文件由 originalPath 保留。确认宿主支持 WebP 时在 MCP 服务 env 设置 `DP_IMAGE_FORMAT=webp` 以减少字节；未协商的宿主格式支持无法自动推断。WebP 主要减少字节量，视觉 token 是否降低取决于模型与图片尺寸。
 
 应用动作可以由匹配 profile 封装时，使用 execute_semantic，省去 Agent 管理工具和颜色等细节。先看返回的 profile id、coordinates、actions[].example，再填 `{window_id,profile?,actions:[{action,args}]}`。profile 的原理、文件协议和适配流程见 [语义协议](SEMANTIC-PROFILES.md)。
 

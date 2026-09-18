@@ -1,4 +1,7 @@
 #include <Windows.h>
+#include <objbase.h>
+#include <oleauto.h>
+#include <UIAutomation.h>
 #include <atomic>
 #include <desktop_pilot/service.hpp>
 #include <future>
@@ -27,6 +30,124 @@ LRESULT CALLBACK window_proc(HWND h, UINT message, WPARAM w, LPARAM l) {
 void require(bool value, const char *message) {
     if (!value)
         throw std::runtime_error(message);
+}
+// A real out-of-process provider makes its Name property unresponsive. This tests UIA's
+// provider transaction timeout rather than merely checking configuration values.
+class SlowProvider final : public IRawElementProviderSimple {
+    std::atomic<ULONG> refs_{1};
+public:
+    HWND window = nullptr;
+    HANDLE entered = nullptr;
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override {
+        if (!out) return E_POINTER;
+        *out = nullptr;
+        if (iid == __uuidof(IUnknown) || iid == __uuidof(IRawElementProviderSimple)) {
+            *out = static_cast<IRawElementProviderSimple*>(this); AddRef(); return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++refs_; }
+    ULONG STDMETHODCALLTYPE Release() override { const auto refs = --refs_; if (!refs) delete this; return refs; }
+    HRESULT STDMETHODCALLTYPE get_ProviderOptions(ProviderOptions* value) override {
+        *value = ProviderOptions_ServerSideProvider; return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetPatternProvider(PATTERNID, IUnknown** value) override {
+        *value = nullptr; return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE GetPropertyValue(PROPERTYID id, VARIANT* value) override {
+        VariantInit(value);
+        if (id == UIA_NamePropertyId) {
+            if (entered) SetEvent(entered);
+            Sleep(8000);
+            value->vt = VT_BSTR; value->bstrVal = SysAllocString(L"Slow provider fixture");
+        } else if (id == UIA_ControlTypePropertyId) { value->vt = VT_I4; value->lVal = UIA_WindowControlTypeId; }
+        return S_OK;
+    }
+    HRESULT STDMETHODCALLTYPE get_HostRawElementProvider(IRawElementProviderSimple** value) override {
+        return UiaHostProviderFromHwnd(window, value);
+    }
+};
+SlowProvider* slowProvider = nullptr;
+LRESULT CALLBACK slow_window_proc(HWND window, UINT message, WPARAM w, LPARAM l) {
+    if (message == WM_GETOBJECT && static_cast<LONG>(l) == UiaRootObjectId && slowProvider)
+        return UiaReturnRawElementProvider(window, w, l, slowProvider);
+    return DefWindowProcW(window, message, w, l);
+}
+int run_slow_provider(const wchar_t* eventName) {
+    const auto com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(com)) return 2;
+    auto entered = OpenEventW(EVENT_MODIFY_STATE, FALSE, eventName);
+    if (!entered) return 2;
+    auto ready = OpenEventW(EVENT_MODIFY_STATE, FALSE, (std::wstring(eventName) + L"-ready").c_str());
+    if (!ready) { CloseHandle(entered); return 2; }
+    WNDCLASSW cls{};
+    cls.lpfnWndProc = slow_window_proc; cls.hInstance = GetModuleHandleW(nullptr);
+    cls.lpszClassName = L"DesktopPilotSlowProviderFixture";
+    RegisterClassW(&cls);
+    slowProvider = new SlowProvider;
+    slowProvider->entered = entered;
+    slowProvider->window = CreateWindowExW(WS_EX_TOOLWINDOW, cls.lpszClassName, L"DesktopPilot Slow Provider",
+        WS_OVERLAPPEDWINDOW, 0, 0, 240, 120, nullptr, nullptr, cls.hInstance, nullptr);
+    if (!slowProvider->window) return 2;
+    SetEvent(ready);
+    CloseHandle(ready);
+    MSG message{};
+    while (GetMessageW(&message, nullptr, 0, 0) > 0) { TranslateMessage(&message); DispatchMessageW(&message); }
+    slowProvider->Release(); CloseHandle(entered); CoUninitialize(); return 0;
+}
+int verify_provider_timeout() {
+    struct Child {
+        PROCESS_INFORMATION process{};
+        HANDLE entered = nullptr, ready = nullptr, stop = nullptr;
+        std::thread watchdog;
+        ~Child() {
+            if (stop) SetEvent(stop);
+            if (watchdog.joinable()) watchdog.join();
+            if (process.hProcess) { TerminateProcess(process.hProcess, 0); WaitForSingleObject(process.hProcess, 2000); CloseHandle(process.hProcess); }
+            if (process.hThread) CloseHandle(process.hThread);
+            if (stop) CloseHandle(stop);
+            if (entered) CloseHandle(entered);
+            if (ready) CloseHandle(ready);
+        }
+    } child;
+    try {
+        wchar_t executable[32768]{};
+        require(GetModuleFileNameW(nullptr, executable, 32768) != 0, "Cannot find fixture executable");
+        auto eventName = L"Local\\DesktopPilotProviderTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
+        child.entered = CreateEventW(nullptr, TRUE, FALSE, eventName.c_str());
+        child.ready = CreateEventW(nullptr, TRUE, FALSE, (eventName + L"-ready").c_str());
+        child.stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        require(child.entered && child.ready && child.stop, "Cannot create provider fixture events");
+        std::wstring command = L"\"" + std::wstring(executable) + L"\" --slow-provider \"" + eventName + L"\"";
+        STARTUPINFOW startup{}; startup.cb = sizeof(startup); startup.dwFlags = STARTF_USESHOWWINDOW; startup.wShowWindow = SW_HIDE;
+        require(CreateProcessW(executable, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+            nullptr, nullptr, &startup, &child.process), "Cannot launch provider fixture");
+        child.watchdog = std::thread([&] {
+            if (WaitForSingleObject(child.stop, 10000) == WAIT_TIMEOUT) TerminateProcess(child.process.hProcess, 2);
+        });
+        // This is a console executable; WaitForInputIdle does not establish window readiness.
+        const HANDLE startupEvents[] = {child.ready, child.process.hProcess};
+        const auto readyResult = WaitForMultipleObjects(2, startupEvents, FALSE, 3000);
+        require(readyResult != WAIT_OBJECT_0 + 1, "Slow provider fixture exited before creating its window");
+        require(readyResult == WAIT_OBJECT_0, "Slow provider fixture did not signal window readiness");
+        dp::Service service;
+        auto windows = service.execute("window.list", {{"pid", child.process.dwProcessId}, {"includeHidden", true},
+            {"titleContains", "DesktopPilot Slow Provider"}})["windows"];
+        require(windows.size() == 1, "Slow provider fixture window not found");
+        auto started = std::chrono::steady_clock::now();
+        bool failed = false;
+        dp::Json result;
+        try {
+            result = service.execute("ui.tree", {{"windowRef", windows[0]["windowRef"]}, {"format", "locator"},
+                {"queryTimeoutMs", 5000}, {"metrics", true}});
+            failed = !dp::ui_inspection_complete(result);
+        } catch (const std::exception& error) { failed = true; result = {{"error", error.what()}}; }
+        const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+        require(WaitForSingleObject(child.entered, 0) == WAIT_OBJECT_0, "Slow UIA provider was not exercised");
+        require(failed && elapsed < 6000, "Blocked provider was not rejected within the transaction timeout envelope");
+        std::cout << "PASS: blocked provider rejected in " << elapsed << " ms: " << result.dump() << '\n';
+        return 0;
+    } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }
 void verify_path(dp::Service& d, const dp::Json& w, HWND window) {
     d.execute("window.activate", {{"windowRef",w}});
@@ -61,6 +182,8 @@ void verify_path(dp::Service& d, const dp::Json& w, HWND window) {
 }
 } // namespace
 int wmain(int argc, wchar_t **argv) {
+    if (argc == 3 && std::wstring(argv[1]) == L"--slow-provider") return run_slow_provider(argv[2]);
+    if (argc == 2 && std::wstring(argv[1]) == L"--provider-timeout") return verify_provider_timeout();
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     WNDCLASSW c{};
     c.lpfnWndProc = window_proc;
@@ -124,8 +247,36 @@ int wmain(int argc, wchar_t **argv) {
                 std::cout << "PASS: held path, unheld path, relative endpoints, release, invalid later point before input\n";
                 done=true;PostMessageW(window,WM_NULL,0,0);return;
             }
-            auto found = d.execute("ui.find", {{"windowRef", w}, {"selector", {{"role", "Edit"}}}});
+            std::exception_ptr fallbackFailure;
+            std::thread fallback([&] {
+                const auto com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+                try {
+                    require(SUCCEEDED(com), "Cannot initialize fallback fixture STA");
+                    dp::Service isolated;
+                    auto targets = isolated.execute("window.list", {{"pid", GetCurrentProcessId()},
+                        {"titleContains", "DesktopPilot Native Verification"}})["windows"];
+                    require(targets.size() == 1, "Fallback fixture target missing");
+                    const auto target = targets[0]["windowRef"];
+                    bool unavailable = false;
+                    try { isolated.execute("ui.tree", {{"windowRef", target}}); }
+                    catch (const std::exception& error) { unavailable = std::string(error.what()).find("ui_automation_unavailable") != std::string::npos; }
+                    require(unavailable, "COM apartment mismatch did not reject UI Automation");
+                    std::filesystem::create_directories("fixtures");
+                    auto image = isolated.execute("capture.window", {{"windowRef", target}, {"method", "screen"},
+                        {"output", "fixtures/uia-unavailable.png"}});
+                    require(image.contains("width") && image["width"].get<int>() > 0,
+                        "UI Automation initialization failure blocked screenshot fallback");
+                } catch (...) { fallbackFailure = std::current_exception(); }
+                if (SUCCEEDED(com)) CoUninitialize();
+            });
+            fallback.join();
+            if (fallbackFailure) std::rethrow_exception(fallbackFailure);
+            auto found = d.execute("ui.find", {{"windowRef", w}, {"selector", {{"role", "Edit"}}}, {"metrics", true}});
             require(!found["uniqueRef"].is_null(), "Edit not unique");
+            require(found["metrics"]["runtimeIdLookups"] == found["visited"],
+                    "Full query reread locator identity while adding optional details");
+            require(found["metrics"]["connectionTimeoutMs"] == 2000 && found["metrics"]["transactionTimeoutMs"] == 2000,
+                    "UI Automation provider timeouts were not configured and verified");
             auto e = found["uniqueRef"];
             auto compact = d.execute("ui.find", {{"windowRef", w}, {"selector", {{"role", "Edit"}}},
                 {"format", "compact"}, {"metrics", true}});
@@ -134,6 +285,21 @@ int wmain(int argc, wchar_t **argv) {
             require(dp::dump_json(compact["elements"]).size() < dp::dump_json(found["elements"]).size(),
                     "Compact result did not reduce bytes");
             require(compact["metrics"]["payloadBytes"].get<size_t>() > 0, "Missing query metrics");
+            require(compact["metrics"]["identityComparisons"].get<size_t>() <= compact["visited"].get<size_t>(),
+                    "Identity lookup performed more than one comparison per visited node");
+            require(compact["evidenceComplete"] == true, "Complete selector evidence incorrectly rejected");
+            auto repeated = d.execute("ui.find", {{"windowRef", w}, {"selector", {{"role", "Edit"}}},
+                {"format", "locator"}, {"metrics", true}});
+            require(repeated["uniqueRef"] == e &&
+                    repeated["metrics"]["identityComparisons"].get<size_t>() <= repeated["visited"].get<size_t>(),
+                    "Repeated observation changed identity or scanned the reference table");
+            auto paged = d.execute("ui.tree", {{"windowRef", w}, {"limit", 1}, {"format", "locator"}});
+            require(paged["has_more"] == true && paged["evidenceComplete"] == false && paged["uniqueRef"].is_null(),
+                    "Paged evidence claimed completeness or uniqueness");
+            auto shallow = d.execute("ui.tree", {{"windowRef", w}, {"depth", 0}, {"format", "locator"}});
+            require(shallow["truncated"] == true && shallow["stopReason"] == "depthLimit" &&
+                    shallow["evidenceComplete"] == false && shallow["uniqueRef"].is_null(),
+                    "Depth boundary hid unvisited children");
             auto partial = d.execute("ui.find", {{"windowRef", w}, {"limit", 1}, {"stopAfterLimit", true}});
             require(partial["truncated"] == true && partial["uniqueRef"].is_null() && partial["visited"] == 1,
                     "Early stop must not claim uniqueness");

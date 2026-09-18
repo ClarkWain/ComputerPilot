@@ -108,7 +108,7 @@ Agent 根据返回的标题、PID 和任务上下文辨认目标，确定后使�
 {"window_id":"w1","mode":"both"}
 ```
 
-默认 `controls`，只返回控件和语义信息；需要看画面时明确使用 `image` 或 `both`。默认恢复目标窗口焦点，不改变已有窗口大小。仅后台诊断时可用 `activate:false`。
+默认 `controls`，返回控件和语义信息；首次理解界面及发现语义动作使用 `both`。`image` 只截图，完全跳过 UIA 和 profile 扫描，返回 `semantic.status:not_checked`，空 profiles 不代表软件不兼容。默认恢复目标窗口焦点，不改变已有窗口大小。仅后台诊断时可用 `activate:false`。
 
 返回内容示意（字段节选）：
 
@@ -132,7 +132,7 @@ Agent 根据返回的标题、PID 和任务上下文辨认目标，确定后使�
 
 基础动作读取最近返回的 `coordinateSpace`：有截图时为 `image_pixels`，直接使用返回图片的像素坐标，程序自动映射缩放与裁剪偏移；仅 controls 时为窗口相对物理像素。不要加全屏偏移，也不要自行乘缩放倍数。`control_id` 不受图片缩放影响，控件 bounds 仍标明为窗口相对物理坐标。Paint 语义始终使用画布像素。
 
-整窗截图最长边 1600 像素，默认 WebP；原分辨率文件保留在 `capture.originalPath`（发生缩小时）。需要检查文字、细线时用 `region:{x,y,width,height}` 请求局部截图，region 是窗口相对物理像素；局部默认无损编码，也有 1600 像素上限。宿主不支持 WebP 时，在服务环境设置 `DP_IMAGE_FORMAT=png`，无需修改动作。不得把 WebP 文件变小直接等同于 token 降低。
+整窗截图最长边 1600 像素，默认 PNG（兼容所有模型宿主）；原分辨率文件保留在 `capture.originalPath`（发生缩小时）。需要检查文字、细线时用 `region:{x,y,width,height}` 请求局部截图，region 是窗口相对物理像素；局部默认无损编码，也有 1600 像素上限。确认宿主支持 WebP 时，在服务环境设置 `DP_IMAGE_FORMAT=webp` 以减少字节，无需修改动作。不得把文件变小直接等同于 token 降低。
 
 通过附带客户端取到 capture.path 后，使用宿主图片查看能力打开实际文件；MCP 宿主则查看返回图片。不能只记录路径就声称看过截图。
 
@@ -146,7 +146,7 @@ Agent 根据返回的标题、PID 和任务上下文辨认目标，确定后使�
 
 执行器自动管理观察，但仍要求基础操作依据最近状态；基础批次执行后重新获取状态，不能重复使用已经消费的观察。
 
-`semantic.profiles` 列出当前匹配的 profile，每项含 `id`、条件说明、坐标说明和 `actions[].example`。不匹配原因在 `semantic.unavailable`。不应根据软件名猜 profile。
+`controls`/`both` 返回的 `semantic.profiles` 列出当前匹配的 profile，每项含 `id`、条件说明、坐标说明和 `actions[].example`。不匹配原因在 `semantic.unavailable`。不应根据软件名猜 profile。
 
 ## 三、执行基础操作
 
@@ -236,10 +236,10 @@ points 使用紧凑的 `[x,y]` 数组，不逐点重复 type、窗口、坐标�
 | control_not_unique:zoom | 根据实际缩放控件恢复 profile 要求的 100%，再观察；不是修改系统显示缩放 |
 | window_minimized / window_blocked | 恢复目标窗口或处理实际对话框，再观察 |
 | dpi_mismatch | 调整窗口宽度不会改变 DPI；需要支持该 DPI 的适配器，不冒充匹配、不改系统显示设置 |
-| ui_inspection_incomplete | UI 查询超时或截断，读取停止原因并重新观察；不能据此认定窗口太小 |
+| ui_inspection_incomplete / profile_inspection_incomplete | 兼容性尚未查清。读取 inspection 停止原因和计时；转 `mode:image`，根据可见证据使用基础操作，不原样重复扫描，不据此调整窗口 |
 | 其他控件缺失 | 检查正确选项卡、弹窗和支持版本，按具体原因处理 |
 
-用户明确要求保持窗口大小时遵守；用户已允许为适配调整窗口时直接处理，无需再次询问。修正一次后确认 profile 实际出现，再提交语义批次，不反复盲目尝试。不支持的软件版本才考虑基础操作。
+用户明确要求保持窗口大小时遵守；用户已允许为适配调整窗口时直接处理，无需再次询问。修正一次后确认 profile 实际出现，再提交语义批次，不反复盲目尝试。没有可用语义能力，包括检查超时或 provider 故障时，都可以根据新截图使用基础操作。`referencesInvalidated:true` 表示 worker 已重启，必须先重新 `list_windows` 再截图，不能复用旧 ID。
 
 ### 怎样判断语义执行结果
 
@@ -394,7 +394,7 @@ points 使用紧凑的 `[x,y]` 数组，不逐点重复 type、窗口、坐标�
 - **先判断，再批量。** 先定完成标准；控件可读就用控件，自绘区域就看截图，有适配语义就用语义。界面需要重新理解时结束基础批次。
 - **自动处理不等于不看返回。** 程序恢复焦点、检查环境、管理观察；Agent 要处理明确失败，不能认为下一步一定能继续。
 - **保护任务现场。** 用户要求不改窗口大小，就不能为定位方便最大化；不保存时保留作品，不擅自保存、覆盖或关闭未保存文档。已有授权的正常步骤无需反复确认。
-- **按需读取。** 字段验收优先 controls，画布和视觉布局优先 image，首次理解界面用 both。稳定笔画不逐笔截图；UIA 不完整时补图。不要因为 token 少而删掉完成任务必需的判断。
+- **按需读取。** 字段验收优先 controls，画布和视觉布局优先 image，首次理解界面用 both。稳定笔画不逐笔截图；UIA 不完整时用 `mode:image` 补图；该模式不重跑 UIA。`both` 遇到可恢复查询错误仍返回截图和 inspection 错误，不能把空 controls 当成没有控件。不要因为 token 少而删掉完成任务必需的判断。
 - **如实报告。** 区分计划、实际派发、字段回读、业务结果和作品质量。说明哪里失败、哪些已完成、哪些尚未验证，不把一处故障泛化为所有场景。
 
 进一步阅读：本机参数以安装根目录 docs/AGENT-API.md 和实际 tools/list 为准；Skill 不是新增功能声明。独立测试可用 examples/onboarding/start.ps1 的 check/form/draw；这些练习会创建自己的测试窗口，不是每次实际任务的前置步骤。
