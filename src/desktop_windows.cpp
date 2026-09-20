@@ -321,7 +321,8 @@ struct Desktop::Impl {
         }
         return id;
     }
-    Json describe(IUIAutomationElement *e, bool details = true, QueryMetrics* metrics = nullptr) {
+    Json describe(IUIAutomationElement *e, bool details = true, QueryMetrics* metrics = nullptr,
+                  bool preloaded = false) {
         auto id = element_reference(e, metrics);
         ComPtr<IUIAutomationElement> cached;
         BSTR s = nullptr;
@@ -332,18 +333,25 @@ struct Desktop::Impl {
         int pid = 0;
         {
             TimedPart timer{metrics ? &metrics->propertyMs : nullptr};
-            // Batch cross-process property retrieval. The cache lives only for this observation.
-            check(e->BuildUpdatedCache(locator_cache.Get(), &cached), "element locator snapshot");
-            check(cached->get_CachedName(&s), "element name");
+            // Batch cross-process property retrieval. The cache lives only for
+            // this observation. When the walker already returned this element
+            // via GetFirstChildElementBuildCache/GetNextSiblingElementBuildCache,
+            // the properties are already cached — skip the redundant RPC.
+            IUIAutomationElement* source = e;
+            if (!preloaded) {
+                check(e->BuildUpdatedCache(locator_cache.Get(), &cached), "element locator snapshot");
+                source = cached.Get();
+            }
+            check(source->get_CachedName(&s), "element name");
             name = bstr(s);
             s = nullptr;
-            check(cached->get_CachedAutomationId(&s), "element automation id");
+            check(source->get_CachedAutomationId(&s), "element automation id");
             aid = bstr(s);
-            check(cached->get_CachedControlType(&type), "element control type");
-            check(cached->get_CachedBoundingRectangle(&r), "element bounds");
-            check(cached->get_CachedIsEnabled(&enabled), "element enabled");
-            check(cached->get_CachedIsOffscreen(&off), "element offscreen");
-            check(cached->get_CachedProcessId(&pid), "element process id");
+            check(source->get_CachedControlType(&type), "element control type");
+            check(source->get_CachedBoundingRectangle(&r), "element bounds");
+            check(source->get_CachedIsEnabled(&enabled), "element enabled");
+            check(source->get_CachedIsOffscreen(&off), "element offscreen");
+            check(source->get_CachedProcessId(&pid), "element process id");
         }
         Json row = {{"elementRef", id}, {"name", name}, {"automationId", aid},
             {"role", role(type)}, {"controlType", type}, {"pid", pid}, {"bounds", rect(r)},
@@ -406,8 +414,17 @@ struct Desktop::Impl {
             ComPtr<IUIAutomationElement> e;
             int depth;
             std::string parent;
+            bool preloaded;
         };
-        std::vector<Node> stack{{root, 0, ""}};
+        // Preload the root element's cache once so the very first describe()
+        // avoids a redundant BuildUpdatedCache RPC. Subsequent children come
+        // from GetFirstChildElementBuildCache/GetNextSiblingElementBuildCache
+        // which return already-cached snapshots.
+        ComPtr<IUIAutomationElement> rootCached;
+        auto rootCacheResult = root->BuildUpdatedCache(locator_cache.Get(), &rootCached);
+        std::vector<Node> stack;
+        if (SUCCEEDED(rootCacheResult) && rootCached) stack.push_back({rootCached, 0, "", true});
+        else stack.push_back({root, 0, "", false});
         Json rows = Json::array();
         int visited = 0, matched = 0;
         bool truncated = false;
@@ -432,7 +449,7 @@ struct Desktop::Impl {
             stack.pop_back();
             Json row;
             try {
-                row = describe(node.e.Get(), false, &metrics);
+                row = describe(node.e.Get(), false, &metrics, node.preloaded);
             } catch (const std::exception& error) {
                 recordProviderError("locatorSnapshot", error.what());
                 continue;
@@ -470,7 +487,7 @@ struct Desktop::Impl {
                 TimedPart timer{&metrics.traversalMs};
                 std::vector<ComPtr<IUIAutomationElement>> children;
                 ComPtr<IUIAutomationElement> child;
-                const auto childResult = walker->GetFirstChildElement(node.e.Get(), &child);
+                const auto childResult = walker->GetFirstChildElementBuildCache(node.e.Get(), locator_cache.Get(), &child);
                 if (SUCCEEDED(childResult))
                     while (child) {
                         if (std::chrono::steady_clock::now() - started >= std::chrono::milliseconds(timeout)) {
@@ -480,9 +497,9 @@ struct Desktop::Impl {
                         }
                         children.push_back(child);
                         ComPtr<IUIAutomationElement> next;
-                        const auto siblingResult = walker->GetNextSiblingElement(child.Get(), &next);
+                        const auto siblingResult = walker->GetNextSiblingElementBuildCache(child.Get(), locator_cache.Get(), &next);
                         if (FAILED(siblingResult)) {
-                            recordProviderError("nextSibling", "GetNextSiblingElement HRESULT=" +
+                            recordProviderError("nextSibling", "GetNextSiblingElementBuildCache HRESULT=" +
                                 std::to_string(static_cast<unsigned long>(siblingResult)));
                             break;
                         }
@@ -493,10 +510,10 @@ struct Desktop::Impl {
                             break;
                         }
                     }
-                else recordProviderError("firstChild", "GetFirstChildElement HRESULT=" +
+                else recordProviderError("firstChild", "GetFirstChildElementBuildCache HRESULT=" +
                     std::to_string(static_cast<unsigned long>(childResult)));
                 for (auto it = children.rbegin(); it != children.rend(); ++it)
-                    stack.push_back({*it, node.depth + 1, row["elementRef"]});
+                    stack.push_back({*it, node.depth + 1, row["elementRef"], true});
             } else {
                 // A depth boundary is not proof that the unvisited subtree contains no other matches.
                 TimedPart timer{&metrics.traversalMs};

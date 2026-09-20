@@ -17,8 +17,10 @@ int main(int argc,char** argv){try{
             if(name=="在画布上使用"){e["name"]="在画布上使用 画笔 工具";e["bounds"]={{"x",300},{"y",350},{"width",688},{"height",810}};}
             if(name=="缩放")e["value"]=zoomBad?"125 百分比":"100 百分比";
             if(name=="RedTextBox" || name=="GreenTextBox" || name=="BlueTextBox"){
-                require(a.at("depth")==1 && a.at("elementRef")=="编辑颜色","RGB query must be dialog scoped");
-                int offset=name=="RedTextBox"?1:name=="GreenTextBox"?3:5;e["value"]=std::to_string(std::stoi(hex.substr(offset,2),nullptr,16));
+                // setColor no longer verifies R/G/B channels — ui.fill on the
+                // hex box already carries verification. Failing here catches
+                // a regression that reintroduces per-channel scans.
+                require(false,"R/G/B verification removed; setColor must trust hex ui.fill verify");
             }
             return {{"elements",Json::array({e})},{"truncated",false}};
         }
@@ -26,7 +28,15 @@ int main(int argc,char** argv){try{
         if(op=="ui.set_range_value"){int index=a.at("value");width=index<24?index+1:24+(index-23)*2;}
         if(op=="ui.fill"){hex=a.at("text");return {{"status","ok"},{"verification","passed"}};}
         if(op=="input.key_chord" && focused=="大小") {if(a.at("keys")[0]=="HOME")width=1;else if(a.at("keys")[0]=="RIGHT")++width;}
-        if(op=="ui.get")return {{"value",a.at("elementRef")=="不透明度"?"100%":std::to_string(width+(mismatch?1:0))+" 像素"}};
+        if(op=="ui.get") {
+            // Canvas is elementRef-cached and re-read via ui.get; mock the same
+            // shape that ui.find returned so readCanvas can consume it.
+            if(a.at("elementRef")=="在画布上使用")
+                return {{"elementRef","在画布上使用"},{"name","在画布上使用 画笔 工具"},
+                    {"enabled",true},{"offscreen",false},
+                    {"bounds",{{"x",300},{"y",350},{"width",688},{"height",810}}}};
+            return {{"value",a.at("elementRef")=="不透明度"?"100%":std::to_string(width+(mismatch?1:0))+" 像素"}};
+        }
         if(op=="input.move"){++draws;sent=a;if(failDraw)return {{"status","error"},{"message","partial input"}};}
         return {{"status","ok"}};
     };

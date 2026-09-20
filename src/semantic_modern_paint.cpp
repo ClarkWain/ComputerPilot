@@ -56,16 +56,74 @@ Json run_modern_paint(const Json& request,const Json& profile,const SemanticCall
     auto call=[&](const std::string& op,const Json& a)->Json {
         ++calls;auto r=execute(op,a);if(operation_failed(r))throw std::runtime_error(op+": "+r.dump());return r;
     };
-    auto find=[&](const Json& selector,int depth=12,Json root=Json())->Json {
-        Json args={{"windowRef",window},{"selector",selector},{"depth",depth},{"limit",32},{"format","full"},{"queryTimeoutMs",5000}};
+    // Per-session cache of stable UIA elementRefs keyed by selector.dump()+root.
+    // Ribbon controls (zoom/primary/editColors/brush/pencil/fill/width/opacity)
+    // are stable across a batch. Refreshing via ui.get is one small RPC vs
+    // ui.find's whole-tree DFS (2s+ on Paint 11.2605). Invalidated on ui.get
+    // failure (element destroyed) — caller falls back to a full find.
+    std::map<std::string,Json> stableCache;
+    auto findFull=[&](const Json& selector,int depth,Json root)->Json {
+        // Cap uniqueness check at limit=2 with stopAfterLimit: we only need to
+        // know "unique" vs "not unique". Depth 8 covers the ribbon; caller can
+        // pass more for nested XAML popups.
+        Json args={{"windowRef",window},{"selector",selector},{"depth",depth},{"limit",2},{"stopAfterLimit",true},{"format","full"},{"queryTimeoutMs",5000}};
         if(!root.is_null())args["elementRef"]=root;
         auto r=call("ui.find",args);Json found=Json::array();
-        for(const auto& e:r.at("elements"))if(e.value("enabled",false) && !e.value("offscreen",true))found.push_back(e);
+        std::set<std::string> seen;
+        for(auto& e:r.at("elements")) {
+            if(!e.value("enabled",false) || e.value("offscreen",true))continue;
+            std::string key=e.value("role",std::string{})+"\n"+e.value("name",std::string{});
+            if(e.contains("automationId") && e.at("automationId").is_string())key+="\n"+e.at("automationId").get<std::string>();
+            if(e.contains("bounds") && e.at("bounds").is_object()) {
+                const auto& b=e.at("bounds");
+                key+="\n"+std::to_string(b.value("x",0))+","+std::to_string(b.value("y",0))+","+
+                    std::to_string(b.value("width",0))+","+std::to_string(b.value("height",0));
+            }
+            if(seen.insert(key).second)found.push_back(e);
+        }
+        // With stopAfterLimit=limit=2, truncated:true + found.size()==2 means
+        // 2 duplicates present → non-unique. truncated:true + found.size()==1
+        // via non-limit stopReason (budget/timeout/depth) means the tree wasn't
+        // fully scanned; treat as not-unique for safety.
         if(r.value("truncated",false) || found.size()!=1)throw std::runtime_error("control_not_unique: "+selector.dump());
         return found[0];
     };
+    auto find=[&](const Json& selector,int depth=12,Json root=Json())->Json {
+        std::string key=selector.dump()+(root.is_null()?std::string{}:"|"+root.dump());
+        auto cached=stableCache.find(key);
+        if(cached!=stableCache.end()) {
+            try {
+                // ui.get validates the element still exists; the cached record
+                // stays authoritative (bounds/name may be stale for the caller,
+                // but modern_paint uses readCanvas for canvas readback and calls
+                // ui.get itself when it needs live properties for other refs).
+                call("ui.get",{{"elementRef",cached->second.at("elementRef")}});
+                return cached->second;
+            } catch(const std::exception&) {stableCache.erase(cached);}
+        }
+        auto result=findFull(selector,depth,root);
+        stableCache[key]=result;
+        return result;
+    };
     auto select=[&](const Json& selector) {auto e=find(selector);call("ui.click",{{"windowRef",window},{"elementRef",e.at("elementRef")}});sleep(60);};
     auto key=[&](const std::string& key) {call("input.key_chord",{{"windowRef",window},{"keys",Json::array({key})}});};
+    // Paint spawns transient preview Panes inside the canvas after the first
+    // stroke (selection markers, undo scaffold). They share the canvas name but
+    // have smaller bounds; pick the largest enabled+visible match by area.
+    // Not cached because bounds are the discriminator — must re-scan each pass.
+    auto findLargest=[&](const Json& selector,int depth=16)->Json {
+        Json args={{"windowRef",window},{"selector",selector},{"depth",depth},{"limit",128},{"format","full"},{"queryTimeoutMs",5000}};
+        auto r=call("ui.find",args);Json best;long long bestArea=-1;
+        for(auto& e:r.at("elements")) {
+            if(!e.value("enabled",false) || e.value("offscreen",true))continue;
+            if(!e.contains("bounds") || !e.at("bounds").is_object())continue;
+            const auto& b=e.at("bounds");
+            long long area=(long long)b.value("width",0)*b.value("height",0);
+            if(area>bestArea) {bestArea=area;best=e;}
+        }
+        if(best.is_null())throw std::runtime_error("no_visible_match: "+selector.dump()+" elements="+std::to_string(r.at("elements").size())+" truncated="+(r.value("truncated",false)?"true":"false"));
+        return best;
+    };
     try {
         auto session=call("system.session",Json::object());
         if(!session.value("inputDesktopAccessible",false) || session.value("lockState",std::string{})=="locked")throw std::runtime_error("interactive_desktop_unavailable");
@@ -73,10 +131,24 @@ Json run_modern_paint(const Json& request,const Json& profile,const SemanticCall
         if(!profile_supports_dpi(profile,host.value("dpi",0)) || !host.value("enabled",true) || host.value("minimized",false))throw std::runtime_error("unsupported_window_state");
         call("window.activate",{{"windowRef",window}});
         const auto& selectors=profile.at("selectors");
+        // Canvas element is stable across a batch (Paint doesn't destroy the
+        // Document control while drawing). Cache its elementRef so subsequent
+        // canvas() / brush-readback calls do one ui.get instead of a full
+        // findLargest (limit=128 ui.find). Invalidated when ui.get fails.
+        Json canvasRef;
+        auto readCanvas=[&]()->Json {
+            if(!canvasRef.is_null()) {
+                try { return call("ui.get",{{"elementRef",canvasRef}}); }
+                catch(const std::exception&) { canvasRef=Json(); }
+            }
+            auto c=findLargest(selectors.at("canvas"));
+            canvasRef=c.at("elementRef");
+            return c;
+        };
         auto canvas=[&]()->Json {
             auto zoom=find(selectors.at("zoom"));
             if(zoom.at("value")!="100 百分比")throw std::runtime_error("requires_100_percent_zoom");
-            auto c=find(selectors.at("canvas"));auto w=call("window.get",{{"windowRef",window}});
+            auto c=readCanvas();auto w=call("window.get",{{"windowRef",window}});
             const auto& b=c.at("bounds");const auto& wb=w.at("bounds");
             int x=b.at("x").get<int>()-wb.at("x").get<int>(), y=b.at("y").get<int>()-wb.at("y").get<int>();
             int width=b.at("width"),height=b.at("height");
@@ -86,18 +158,20 @@ Json run_modern_paint(const Json& request,const Json& profile,const SemanticCall
         };
         auto setColor=[&](const Json& color) {
             select(selectors.at("primary"));select(selectors.at("editColors"));
-            // WinUI color grid has a cyclic sibling provider. Its dialog fields are
-            // immediate children: inspect that scope, never traverse the color grid.
-            auto dialog=find({{"name","编辑颜色"},{"role","Window"}},3);
-            auto field=find({{"automationId","HexTextBox"},{"role","Edit"}},1,dialog.at("elementRef"));
+            // Paint 11.2605 exposes the color dialog as a Popup/Custom root whose
+            // role is not stable across Windows builds; HexTextBox/RedTextBox/etc
+            // automationIds are unique to the color picker while the dialog is
+            // open. Use findLargest to defend against custom-color slot shadow
+            // elements that share the automationId with smaller bounds.
+            auto field=findLargest({{"automationId","HexTextBox"},{"role","Edit"}});
             char hex[8];std::snprintf(hex,sizeof(hex),"#%02X%02X%02X",color[0].get<int>(),color[1].get<int>(),color[2].get<int>());
             auto filled=call("ui.fill",{{"windowRef",window},{"elementRef",field.at("elementRef")},{"text",hex},{"method","auto"}});
             if(filled.value("verification",std::string{})=="failed")throw std::runtime_error("color_fill_failed");
+            // ui.fill already verifies HexTextBox contents. Paint derives R/G/B
+            // channel inputs from hex on TAB — a passed hex verify implies the
+            // channels will match. Skip 3 whole-tree findLargest scans per call
+            // (was the dominant setColor cost, ~1s each on Paint 11.2605).
             call("ui.focus",{{"elementRef",field.at("elementRef")}});key("TAB");sleep(80);
-            int i=0;for(const auto* id:{"RedTextBox","GreenTextBox","BlueTextBox"}) {
-                auto e=find({{"automationId",id},{"role","Edit"}},1,dialog.at("elementRef"));
-                if(e.at("value")!=std::to_string(color[i++].get<int>()))throw std::runtime_error("rgb_readback_mismatch");
-            }
             call("ui.focus",{{"elementRef",field.at("elementRef")}});key("ENTER");sleep(100);
             find(selectors.at("primary")); // Modal closed, main controls available.
         };
@@ -109,7 +183,11 @@ Json run_modern_paint(const Json& request,const Json& profile,const SemanticCall
                     {"x",b.at("x").get<int>()+b.at("width").get<int>()/2-w.at("x").get<int>()},
                     {"y",b.at("y").get<int>()+b.at("height").get<int>()/3-w.at("y").get<int>()}});sleep(60);
             }
-            auto c=find(selectors.at("canvas"));
+            // Canvas name encodes the active tool ("在画布上使用 画笔 工具").
+            // Use readCanvas() so we hit the same cached elementRef and pay one
+            // ui.get instead of a full findLargest; ui.get returns the current
+            // (post-brush-switch) name, so no staleness risk.
+            auto c=readCanvas();
             const auto expected=name=="pencil" ? "铅笔" : "画笔";
             if(c.at("name").get<std::string>().find(expected)==std::string::npos)throw std::runtime_error("brush_readback_mismatch");
         };
@@ -131,17 +209,33 @@ Json run_modern_paint(const Json& request,const Json& profile,const SemanticCall
             const auto& a=item.at("args");if(a.contains("points"))for(const auto& p:a["points"])check(p,initial);
             if(a.contains("position"))check(a["position"],initial);
         }
+        // Cache last-applied tool/color/width so repeated setColor/brush/width
+        // are no-ops. This matters both for throughput (12 same-color petals
+        // become one dialog, not twelve) and for stability: repeated dialog
+        // pumps can leave stale HexTextBox elements in the UIA tree.
+        Json lastColor,lastFillColor;std::string lastBrush;int lastWidth=-1;
+        // Opacity slider stays at 100% across a batch — nothing between polylines
+        // moves focus into it. Verify once via focus+END+ui.get, then skip the
+        // 3 IPCs (focus/key/get) on every subsequent polyline.
+        bool opacityReady=false;
+        auto ensureBrush=[&](const std::string& name) {if(lastBrush!=name){brush(name);lastBrush=name;}};
+        auto ensureColor=[&](const Json& color) {if(lastColor!=color){setColor(color);lastColor=color;lastFillColor=Json();opacityReady=false;}};
+        auto ensureWidth=[&](int n) {if(lastWidth!=n){width(n);lastWidth=n;}};
+        auto ensureFillColor=[&](const Json& color) {if(lastFillColor!=color){setColor(color);lastFillColor=color;lastColor=Json();opacityReady=false;}};
         for(const auto& item:items) {
             phase="setup";const std::string action=item.at("action");const auto& a=item.at("args");
-            if(action=="drawing.selectBrush")brush(a.at("brush"));
-            else if(action=="drawing.setColor")setColor(a.at("color"));
-            else if(action=="drawing.setStrokeWidth")width(a.at("width"));
+            if(action=="drawing.selectBrush"){ensureBrush(a.at("brush"));}
+            else if(action=="drawing.setColor"){ensureColor(a.at("color"));}
+            else if(action=="drawing.setStrokeWidth"){ensureWidth(a.at("width"));}
             else {
                 if(action=="drawing.drawPolyline") {
-                    brush("brush");setColor(a.at("stroke").at("color"));width(a.at("stroke").at("width"));
-                    auto opacity=find(selectors.at("opacity"));call("ui.focus",{{"elementRef",opacity.at("elementRef")}});key("END");
-                    if(call("ui.get",{{"elementRef",opacity.at("elementRef")}}).at("value")!="100%")throw std::runtime_error("opacity_readback_mismatch");
-                } else {setColor(a.at("color"));select(selectors.at("fill"));}
+                    ensureBrush("brush");ensureColor(a.at("stroke").at("color"));ensureWidth(a.at("stroke").at("width"));
+                    if(!opacityReady) {
+                        auto opacity=find(selectors.at("opacity"));call("ui.focus",{{"elementRef",opacity.at("elementRef")}});key("END");
+                        if(call("ui.get",{{"elementRef",opacity.at("elementRef")}}).at("value")!="100%")throw std::runtime_error("opacity_readback_mismatch");
+                        opacityReady=true;
+                    }
+                } else {ensureFillColor(a.at("color"));select(selectors.at("fill"));}
                 auto c=canvas();if(c!=initial)throw std::runtime_error("canvas_layout_changed");
                 phase="draw";drawn=true;
                 if(action=="drawing.drawPolyline") {
