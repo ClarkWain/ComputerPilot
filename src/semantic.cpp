@@ -9,6 +9,7 @@
 
 namespace dp {
 Json run_modern_paint(const Json&, const Json&, const SemanticCall&, const std::function<void(int)>&);
+Json run_aseprite_vision(const Json&, const Json&, const SemanticCall&, const std::function<void(int)>&);
 namespace {
 int integer(const Json& v, int minimum, int maximum) {
     if (!v.is_number_integer()) throw std::invalid_argument("Expected integer parameter");
@@ -439,6 +440,8 @@ Json run_semantic(const Json& request, const Json& profile, const SemanticCall& 
                   const std::function<void(int)>& sleep, const SemanticEvidence* evidence) {
     if (profile.value("adapter", std::string{}) == "paint-modern")
         return run_modern_paint(request, profile, execute, sleep);
+    if (profile.value("adapter", std::string{}) == "aseprite-vision")
+        return run_aseprite_vision(request, profile, execute, sleep);
     if (!profile.value("adapter", std::string{}).empty())
         throw std::invalid_argument("Unsupported semantic adapter");
     const auto action = request.at("action").get<std::string>();

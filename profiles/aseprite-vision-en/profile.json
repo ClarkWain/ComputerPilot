@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "aseprite-vision-en",
+  "adapter": "aseprite-vision",
+  "dpi": 96,
+  "supportedDpi": [96, 120, 144, 192],
+  "minimumWindowWidth": 800,
+  "description": "Aseprite v1.2.15 English UI — self-drawn Allegro UI, no UIA. Adapter drives it via screenshot OCR of the top menu strip and keyboard hotkeys. Drawing/canvas actions are intentionally not exposed here yet.",
+  "coordinates": "window_relative pixels at capture DPI",
+  "match": {"executable": "aseprite.exe", "className": "Aseprite.Window", "requiredSelectors": []},
+  "selectors": {},
+  "menuBarHeightPx": 30,
+  "keySettleMs": 60,
+  "menuSettleMs": 120,
+  "ocrMinScore": 0.5,
+  "actions": [
+    {"action": "aseprite.keyChord",
+     "description": "Press an Aseprite hotkey combination (B pencil, N spray, E eraser, G paint bucket, 1..9 zoom, Ctrl+Z undo, etc.). No screenshot verification; caller decides how to observe result.",
+     "example": {"action": "aseprite.keyChord", "args": {"keys": ["B"]}}},
+    {"action": "aseprite.openMenu",
+     "description": "Capture the top menu strip, OCR it, then click the labeled entry. Supported names: File, Edit, Sprite, Layer, Frame, Select, Tags, View, Help. Returns the recognized OCR score and clicked window-relative point.",
+     "example": {"action": "aseprite.openMenu", "args": {"name": "View"}}}
+  ]
+}
