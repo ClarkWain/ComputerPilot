@@ -1,0 +1,2 @@
+{"id":1,"jsonrpc":"2.0","result":{"capabilities":{"tools":{"listChanged":false}},"instructions":"Call computer_runtime to discover supported operations. References only exist in this server session. Window capture returns visible screen pixels, including occluding windows.","protocolVersion":"2025-06-18","serverInfo":{"name":"desktop-pilot","version":"0.3.0"}}}
+{"id":2,"jsonrpc":"2.0","result":{"content":[{"text":"{\"completed\":10,\"status\":\"ok\"}","type":"text"}],"isError":false,"structuredContent":{"completed":10,"status":"ok"}}}
