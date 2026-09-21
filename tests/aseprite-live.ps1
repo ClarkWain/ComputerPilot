@@ -31,20 +31,33 @@ try {
  $r1=Invoke-Pilot 'semantic.execute' @{windowRef=$ref;actions=@(@{action='aseprite.keyChord';args=@{keys=@('B')}})}
  $r1|ConvertTo-Json -Depth 8 -Compress | Write-Output
 
- # Test 2: openMenu View
+ # Test 2: selectTool paintBucket (fires G under the hood).
  Write-Output ''
- Write-Output '# Test 2: aseprite.openMenu View (real OCR)'
+ Write-Output '# Test 2: aseprite.selectTool paintBucket'
+ $r2=Invoke-Pilot 'semantic.execute' @{windowRef=$ref;actions=@(@{action='aseprite.selectTool';args=@{tool='paintBucket'}})}
+ $r2|ConvertTo-Json -Depth 8 -Compress | Write-Output
+
+ # Test 3: zoom 400% (fires 3).
+ Write-Output ''
+ Write-Output '# Test 3: aseprite.zoom 400'
+ $r3=Invoke-Pilot 'semantic.execute' @{windowRef=$ref;actions=@(@{action='aseprite.zoom';args=@{percent=400}})}
+ $r3|ConvertTo-Json -Depth 8 -Compress | Write-Output
+
+ # Test 4: openMenu View
+ Write-Output ''
+ Write-Output '# Test 4: aseprite.openMenu View (real OCR)'
  $timer=[Diagnostics.Stopwatch]::StartNew()
- $r2=Invoke-Pilot 'semantic.execute' @{windowRef=$ref;actions=@(@{action='aseprite.openMenu';args=@{name='View'}})}
+ $r4=Invoke-Pilot 'semantic.execute' @{windowRef=$ref;actions=@(@{action='aseprite.openMenu';args=@{name='View'}})}
  $timer.Stop()
  Write-Output ("elapsedMs=$($timer.ElapsedMilliseconds)")
- $r2|ConvertTo-Json -Depth 8 -Compress | Write-Output
+ $r4|ConvertTo-Json -Depth 8 -Compress | Write-Output
 
  # Capture window post-menu to observe if it opened.
  $out=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../out/aseprite-probe/after-view.png'))
  Invoke-Pilot 'capture.window' @{windowRef=$ref;output=$out}|Out-Null
  Write-Output "capture=$out"
 
- # Close the menu if it opened.
+ # Close the menu if it opened, and revert zoom to 100.
  Invoke-Pilot 'input.key_chord' @{windowRef=$ref;keys=@('ESC')}|Out-Null
+ Invoke-Pilot 'semantic.execute' @{windowRef=$ref;actions=@(@{action='aseprite.zoom';args=@{percent=100}})}|Out-Null
 } finally {$p.StandardInput.Close();[void]$p.WaitForExit(3000);$p.Dispose()}

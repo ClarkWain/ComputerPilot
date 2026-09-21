@@ -208,6 +208,59 @@ int main(int argc, char** argv) {
             }
             require(rejected, "unimplemented action must be rejected");
         }
+        // --- 10. selectTool dispatches the mapped hotkey.
+        {
+            keySends = 0;
+            lastKey.clear();
+            Json req = {{"windowRef", "w1"},
+                        {"action", "aseprite.selectTool"},
+                        {"args", {{"tool", "paintBucket"}}}};
+            auto r = dp::run_semantic(req, profile, mock, [](int) {});
+            require(r.at("status") == "ok" && keySends == 1 && lastKey == "G",
+                    "selectTool paintBucket must press G");
+            require(r.value("hotkey", std::string{}) == "G",
+                    "selectTool must surface hotkey");
+        }
+        // --- 11. selectTool rejects unknown tool without dispatch.
+        {
+            keySends = 0;
+            Json req = {{"windowRef", "w1"},
+                        {"action", "aseprite.selectTool"},
+                        {"args", {{"tool", "airbrush"}}}};
+            bool rejected = false;
+            try {
+                dp::run_semantic(req, profile, mock, [](int) {});
+            } catch (const std::invalid_argument&) {
+                rejected = true;
+            }
+            require(rejected && keySends == 0, "unknown tool must not dispatch");
+        }
+        // --- 12. zoom dispatches the mapped hotkey.
+        {
+            keySends = 0;
+            lastKey.clear();
+            Json req = {{"windowRef", "w1"},
+                        {"action", "aseprite.zoom"},
+                        {"args", {{"percent", 400}}}};
+            auto r = dp::run_semantic(req, profile, mock, [](int) {});
+            require(r.at("status") == "ok" && keySends == 1 && lastKey == "3",
+                    "zoom 400% must press 3");
+            require(r.value("percent", 0) == 400, "zoom must surface percent");
+        }
+        // --- 13. zoom rejects unsupported percent without dispatch.
+        {
+            keySends = 0;
+            Json req = {{"windowRef", "w1"},
+                        {"action", "aseprite.zoom"},
+                        {"args", {{"percent", 150}}}};
+            bool rejected = false;
+            try {
+                dp::run_semantic(req, profile, mock, [](int) {});
+            } catch (const std::invalid_argument&) {
+                rejected = true;
+            }
+            require(rejected && keySends == 0, "unsupported zoom must not dispatch");
+        }
         std::cout << "aseprite-vision tests passed\n";
         return 0;
     } catch (const std::exception& e) {

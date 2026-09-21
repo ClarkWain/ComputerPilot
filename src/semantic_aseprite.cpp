@@ -22,6 +22,7 @@
 #include <chrono>
 #include <cctype>
 #include <filesystem>
+#include <map>
 #include <set>
 
 namespace dp {
@@ -69,6 +70,23 @@ std::string lower(std::string s) {
 // will need per-locale profiles; do not localize this here.
 const std::set<std::string> menu_names = {"File",   "Edit",    "Sprite", "Layer", "Frame",
                                           "Select", "Tags",    "View",   "Help"};
+
+// Aseprite v1.2.15 default tool hotkeys. Key is the user-facing tool name;
+// value is the single-character shortcut. Renaming a hotkey inside Aseprite
+// invalidates this table and needs a per-user profile override — but the
+// stock installation is what we target here.
+const std::map<std::string, std::string> tool_hotkeys = {
+    {"pencil", "B"},         {"spray", "N"},          {"eraser", "E"},
+    {"paintBucket", "G"},    {"line", "L"},           {"rectangle", "U"},
+    {"ellipse", "O"},        {"text", "T"},           {"magicWand", "W"},
+    {"hand", "H"},           {"eyedropper", "Y"},     {"move", "M"},
+    {"rectangularMarquee", "F"}};
+
+// Aseprite v1.2.15 default zoom hotkeys. Only the discrete presets are
+// mapped; smaller/larger stepping via + / - is not exposed here so callers
+// can rely on a deterministic final zoom level.
+const std::map<int, std::string> zoom_hotkeys = {{100, "1"},  {200, "2"},  {400, "3"},
+                                                 {800, "4"},  {1600, "5"}, {3200, "6"}};
 
 bool is_ascii_key(const std::string& key) {
     // The same allowlist input.key_chord accepts. Aseprite hotkeys use
@@ -126,7 +144,8 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
     }
 
     const auto action = request.at("action").get<std::string>();
-    if (action != "aseprite.keyChord" && action != "aseprite.openMenu")
+    if (action != "aseprite.keyChord" && action != "aseprite.openMenu" &&
+        action != "aseprite.selectTool" && action != "aseprite.zoom")
         throw std::invalid_argument("Unsupported Aseprite action");
     if (!request.contains("windowRef") || !request.at("windowRef").is_string())
         throw std::invalid_argument("windowRef required");
@@ -144,7 +163,7 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
         }
         for (auto it = a.begin(); it != a.end(); ++it)
             if (it.key() != "keys") throw std::invalid_argument("Unsupported argument: " + it.key());
-    } else { // aseprite.openMenu
+    } else if (action == "aseprite.openMenu") {
         if (!a.contains("name") || !a.at("name").is_string())
             throw std::invalid_argument("name must be a string");
         if (!menu_names.contains(a.at("name").get<std::string>()))
@@ -152,6 +171,24 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
                 "Unknown menu; use one of File/Edit/Sprite/Layer/Frame/Select/Tags/View/Help");
         for (auto it = a.begin(); it != a.end(); ++it)
             if (it.key() != "name") throw std::invalid_argument("Unsupported argument: " + it.key());
+    } else if (action == "aseprite.selectTool") {
+        if (!a.contains("tool") || !a.at("tool").is_string())
+            throw std::invalid_argument("tool must be a string");
+        if (!tool_hotkeys.contains(a.at("tool").get<std::string>()))
+            throw std::invalid_argument(
+                "Unknown tool; supported: pencil/spray/eraser/paintBucket/line/rectangle/"
+                "ellipse/text/magicWand/hand/eyedropper/move/rectangularMarquee");
+        for (auto it = a.begin(); it != a.end(); ++it)
+            if (it.key() != "tool") throw std::invalid_argument("Unsupported argument: " + it.key());
+    } else { // aseprite.zoom
+        if (!a.contains("percent") || !a.at("percent").is_number_integer())
+            throw std::invalid_argument("percent must be an integer");
+        if (!zoom_hotkeys.contains(a.at("percent").get<int>()))
+            throw std::invalid_argument(
+                "Unsupported zoom; use one of 100/200/400/800/1600/3200");
+        for (auto it = a.begin(); it != a.end(); ++it)
+            if (it.key() != "percent")
+                throw std::invalid_argument("Unsupported argument: " + it.key());
     }
 
     const auto window = request.at("windowRef");
@@ -199,6 +236,46 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
                      std::chrono::duration<double, std::milli>(
                          std::chrono::steady_clock::now() - started)
                          .count()}};
+        }
+
+        if (action == "aseprite.selectTool") {
+            phase = "dispatch";
+            dispatched = true;
+            const auto tool = a.at("tool").get<std::string>();
+            const auto& hotkey = tool_hotkeys.at(tool);
+            call("input.key_chord", {{"windowRef", window}, {"keys", Json::array({hotkey})}});
+            const int settle = profile.value("keySettleMs", 60);
+            if (settle) sleep(settle);
+            return {{"status", "ok"},
+                    {"action", action},
+                    {"tool", tool},
+                    {"hotkey", hotkey},
+                    {"nativeCalls", calls},
+                    {"verification", "not_requested"},
+                    {"dispatch", "returned"},
+                    {"elapsedMs", std::chrono::duration<double, std::milli>(
+                                      std::chrono::steady_clock::now() - started)
+                                      .count()}};
+        }
+
+        if (action == "aseprite.zoom") {
+            phase = "dispatch";
+            dispatched = true;
+            const int percent = a.at("percent").get<int>();
+            const auto& hotkey = zoom_hotkeys.at(percent);
+            call("input.key_chord", {{"windowRef", window}, {"keys", Json::array({hotkey})}});
+            const int settle = profile.value("keySettleMs", 60);
+            if (settle) sleep(settle);
+            return {{"status", "ok"},
+                    {"action", action},
+                    {"percent", percent},
+                    {"hotkey", hotkey},
+                    {"nativeCalls", calls},
+                    {"verification", "not_requested"},
+                    {"dispatch", "returned"},
+                    {"elapsedMs", std::chrono::duration<double, std::milli>(
+                                      std::chrono::steady_clock::now() - started)
+                                      .count()}};
         }
 
         // aseprite.openMenu: capture the top menu strip, OCR it, then click on
