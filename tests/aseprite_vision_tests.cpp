@@ -261,6 +261,40 @@ int main(int argc, char** argv) {
             }
             require(rejected && keySends == 0, "unsupported zoom must not dispatch");
         }
+        // --- 14. click passes window-relative coordinates through.
+        {
+            clicks = 0;
+            lastClickAt = Json();
+            Json req = {{"windowRef", "w1"},
+                        {"action", "aseprite.click"},
+                        {"args", {{"x", 1230}, {"y", 920}}}};
+            auto r = dp::run_semantic(req, profile, mock, [](int) {});
+            require(r.at("status") == "ok" && clicks == 1,
+                    "click must dispatch a single input.click");
+            require(lastClickAt.at("x") == 1230 && lastClickAt.at("y") == 920,
+                    "click coordinates must pass through unchanged");
+        }
+        // --- 15. click rejects out-of-window coordinates without dispatch.
+        {
+            clicks = 0;
+            Json req = {{"windowRef", "w1"},
+                        {"action", "aseprite.click"},
+                        {"args", {{"x", 5000}, {"y", 100}}}};
+            auto r = dp::run_semantic(req, profile, mock, [](int) {});
+            require(r.at("status") == "error" && clicks == 0 &&
+                        std::string(r.at("message")).find("click_point_outside_window") !=
+                            std::string::npos,
+                    "out-of-window click must be rejected before dispatch");
+        }
+        // --- 16. click accepts button and count overrides.
+        {
+            clicks = 0;
+            Json req = {{"windowRef", "w1"},
+                        {"action", "aseprite.click"},
+                        {"args", {{"x", 500}, {"y", 400}, {"button", "right"}, {"count", 2}}}};
+            auto r = dp::run_semantic(req, profile, mock, [](int) {});
+            require(r.at("status") == "ok" && clicks == 1, "double right-click must dispatch");
+        }
         std::cout << "aseprite-vision tests passed\n";
         return 0;
     } catch (const std::exception& e) {

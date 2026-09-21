@@ -145,7 +145,8 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
 
     const auto action = request.at("action").get<std::string>();
     if (action != "aseprite.keyChord" && action != "aseprite.openMenu" &&
-        action != "aseprite.selectTool" && action != "aseprite.zoom")
+        action != "aseprite.selectTool" && action != "aseprite.zoom" &&
+        action != "aseprite.click")
         throw std::invalid_argument("Unsupported Aseprite action");
     if (!request.contains("windowRef") || !request.at("windowRef").is_string())
         throw std::invalid_argument("windowRef required");
@@ -180,7 +181,7 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
                 "ellipse/text/magicWand/hand/eyedropper/move/rectangularMarquee");
         for (auto it = a.begin(); it != a.end(); ++it)
             if (it.key() != "tool") throw std::invalid_argument("Unsupported argument: " + it.key());
-    } else { // aseprite.zoom
+    } else if (action == "aseprite.zoom") {
         if (!a.contains("percent") || !a.at("percent").is_number_integer())
             throw std::invalid_argument("percent must be an integer");
         if (!zoom_hotkeys.contains(a.at("percent").get<int>()))
@@ -188,6 +189,31 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
                 "Unsupported zoom; use one of 100/200/400/800/1600/3200");
         for (auto it = a.begin(); it != a.end(); ++it)
             if (it.key() != "percent")
+                throw std::invalid_argument("Unsupported argument: " + it.key());
+    } else { // aseprite.click
+        for (auto key : {"x", "y"}) {
+            if (!a.contains(key) || !a.at(key).is_number_integer())
+                throw std::invalid_argument(std::string(key) + " must be an integer");
+            int v = a.at(key).get<int>();
+            if (v < 0 || v > 32000)
+                throw std::invalid_argument(std::string(key) + " out of range 0..32000");
+        }
+        if (a.contains("button") && !a.at("button").is_string())
+            throw std::invalid_argument("button must be a string when supplied");
+        if (a.contains("button")) {
+            const auto btn = a.at("button").get<std::string>();
+            if (btn != "left" && btn != "right" && btn != "middle")
+                throw std::invalid_argument("button must be left, right or middle");
+        }
+        if (a.contains("count")) {
+            if (!a.at("count").is_number_integer())
+                throw std::invalid_argument("count must be an integer");
+            const int c = a.at("count").get<int>();
+            if (c < 1 || c > 3)
+                throw std::invalid_argument("count must be 1..3");
+        }
+        for (auto it = a.begin(); it != a.end(); ++it)
+            if (it.key() != "x" && it.key() != "y" && it.key() != "button" && it.key() != "count")
                 throw std::invalid_argument("Unsupported argument: " + it.key());
     }
 
@@ -270,6 +296,35 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
                     {"action", action},
                     {"percent", percent},
                     {"hotkey", hotkey},
+                    {"nativeCalls", calls},
+                    {"verification", "not_requested"},
+                    {"dispatch", "returned"},
+                    {"elapsedMs", std::chrono::duration<double, std::milli>(
+                                      std::chrono::steady_clock::now() - started)
+                                      .count()}};
+        }
+
+        if (action == "aseprite.click") {
+            phase = "dispatch";
+            dispatched = true;
+            const int x = a.at("x").get<int>();
+            const int y = a.at("y").get<int>();
+            if (x >= win_w || y >= win_h)
+                throw std::runtime_error("click_point_outside_window");
+            Json click_args = {{"windowRef", window},
+                               {"coordinateSpace", "window_relative"},
+                               {"expectedSize", host.at("bounds")},
+                               {"x", x},
+                               {"y", y}};
+            if (a.contains("button")) click_args["button"] = a.at("button");
+            if (a.contains("count")) click_args["count"] = a.at("count");
+            call("input.click", click_args);
+            const int settle = profile.value("clickSettleMs", 60);
+            if (settle) sleep(settle);
+            return {{"status", "ok"},
+                    {"action", action},
+                    {"x", x},
+                    {"y", y},
                     {"nativeCalls", calls},
                     {"verification", "not_requested"},
                     {"dispatch", "returned"},
