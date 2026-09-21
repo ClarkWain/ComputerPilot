@@ -34,6 +34,10 @@ public:
     Ocr(const Ocr&)=delete;
     Ocr& operator=(const Ocr&)=delete;
     OcrResult run(const Image& image);
+    // Per-call max_side override for callers that need to keep small text at
+    // original resolution (e.g. tight menu strips of self-drawn UIs). Bounded
+    // by the constructor's OcrOptions::validate() ranges.
+    OcrResult run(const Image& image, int max_side_override);
     Json metadata() const;
     static bool available();
 private:

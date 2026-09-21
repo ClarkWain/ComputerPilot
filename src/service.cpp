@@ -256,7 +256,14 @@ Json Service::perform(const std::string &op, const Json &args) {
                 ocr_ = std::move(replacement);
                 ocr_path_ = dir;
             }
-            recognized = ocr_->run(image);
+            if (args.contains("ocrMaxSide")) {
+                int override_side = args.at("ocrMaxSide").get<int>();
+                if (override_side < 32 || override_side > 2048)
+                    throw std::invalid_argument("ocrMaxSide must be within 32..2048");
+                recognized = ocr_->run(image, override_side);
+            } else {
+                recognized = ocr_->run(image);
+            }
             result["textLines"] = text_lines_json(recognized.lines, image_ref);
             result["components"]["ocr"] = recognized.truncated ? "partial" : "completed";
             if (recognized.truncated)

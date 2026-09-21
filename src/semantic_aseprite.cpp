@@ -86,13 +86,6 @@ bool is_ascii_key(const std::string& key) {
     return false;
 }
 
-Json ocr_bounds_center(const Json& bounds, int left, int top) {
-    // vision.ocr returns bounds in captured-image coordinates. Translate to
-    // window-relative by subtracting the capture region origin.
-    return {{"x", bounds.at("x").get<int>() + bounds.at("width").get<int>() / 2 - left},
-            {"y", bounds.at("y").get<int>() + bounds.at("height").get<int>() / 2 - top}};
-}
-
 } // namespace
 
 Json run_aseprite_vision(const Json& request, const Json& profile, const SemanticCall& execute,
@@ -226,42 +219,71 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
                            {"output", utf8(tmp_file.wstring())}, {"method", "screen"}});
         phase = "ocr";
         const auto ocr_dir = resolve_ocr_models(profile);
+        // Aseprite's self-drawn menu bar is 10-14 px tall (small pixel font).
+        // The default OCR max_side=960 downscales a full-width HD/4K strip to
+        // ~350x — text becomes 4-5 px and detection misses everything. Pass a
+        // large override so the strip runs at native resolution.
+        const int ocrMaxSide = profile.value("ocrMaxSide", 2048);
         auto ocr_result = call("vision.ocr",
-                               {{"image", strip.at("path")}, {"ocrModels", utf8(ocr_dir.wstring())}});
+                               {{"image", strip.at("path")},
+                                {"ocrModels", utf8(ocr_dir.wstring())},
+                                {"ocrMaxSide", ocrMaxSide}});
         std::error_code ec;
         std::filesystem::remove(tmp_file, ec); // Best-effort cleanup.
 
         const auto target = a.at("name").get<std::string>();
         const auto target_lower = lower(target);
         const auto& lines = ocr_result.at("textLines");
+        // PP-OCRv4 tends to merge closely spaced menu labels into one detected
+        // line ("File Edit Sprite Layer Frame Select View Help"). We scan
+        // every line for the target as a case-insensitive substring, then
+        // proportionally interpolate the bounding box to estimate the label
+        // center. Match with word boundaries so "View" does not match "Preview".
         Json best;
         float best_score = -1;
+        int best_center_x = 0, best_center_y = 0;
         for (const auto& line : lines) {
             auto text = line.value("text", std::string{});
-            // Aseprite menu labels are single words, sometimes with the mnemonic
-            // underline that OCR may add as trailing punctuation. Match by
-            // case-insensitive prefix.
+            if (text.empty()) continue;
             auto text_lower = lower(text);
-            if (text_lower.size() < target_lower.size()) continue;
-            if (text_lower.substr(0, target_lower.size()) != target_lower) continue;
+            size_t pos = text_lower.find(target_lower);
+            if (pos == std::string::npos) continue;
+            // Enforce word boundaries: no alpha before/after the match.
+            auto is_alpha = [](char c) {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+            };
+            if (pos > 0 && is_alpha(text[pos - 1])) continue;
+            size_t end = pos + target_lower.size();
+            if (end < text.size() && is_alpha(text[end])) continue;
             float score = line.value("recognitionScore", 0.0f);
-            if (score > best_score) {
-                best_score = score;
-                best = line;
-            }
+            if (score <= best_score) continue;
+            // Estimate the on-screen position: the OCR bounds contain the
+            // whole line; the target substring's center sits at position
+            // (pos + target/2) / text.size along the bounds width.
+            const auto& b = line.at("bounds");
+            const int bx = b.at("x").get<int>();
+            const int by = b.at("y").get<int>();
+            const int bw = b.at("width").get<int>();
+            const int bh = b.at("height").get<int>();
+            const double frac = (double(pos) + double(target.size()) / 2.0) /
+                                double(std::max<size_t>(text.size(), 1));
+            best_score = score;
+            best_center_x = bx + int(std::lround(bw * frac));
+            best_center_y = by + bh / 2;
+            best = line;
         }
         if (best.is_null())
             throw std::runtime_error("menu_label_not_found: " + target);
-        const float minScore = profile.value("ocrMinScore", 0.5);
+        const double minScore = profile.value("ocrMinScore", 0.4);
         if (best_score < minScore)
             throw std::runtime_error("menu_label_score_below_threshold");
-        const auto point = ocr_bounds_center(best.at("bounds"), 0, 0);
+        const Json point = {{"x", best_center_x}, {"y", best_center_y}};
 
         phase = "click";
         dispatched = true;
         call("input.click",
              {{"windowRef", window},          {"coordinateSpace", "window_relative"},
-              {"x", point.at("x")},           {"y", point.at("y").get<int>() /* already relative */},
+              {"x", best_center_x},           {"y", best_center_y},
               {"expectedSize", host.at("bounds")}});
         const int settle = profile.value("menuSettleMs", 120);
         if (settle) sleep(settle);

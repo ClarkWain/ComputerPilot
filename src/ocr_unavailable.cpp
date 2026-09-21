@@ -6,5 +6,6 @@ Ocr::Ocr(const std::filesystem::path&,OcrOptions){throw std::runtime_error("OCR 
 Ocr::~Ocr()=default;
 bool Ocr::available(){return false;}
 OcrResult Ocr::run(const Image&){throw std::runtime_error("OCR backend unavailable");}
+OcrResult Ocr::run(const Image&,int){throw std::runtime_error("OCR backend unavailable");}
 Json Ocr::metadata() const{return {{"available",false}};}
 }

@@ -96,6 +96,19 @@ Ocr::Ocr(const std::filesystem::path& dir,OcrOptions options):impl_(std::make_un
 }
 Ocr::~Ocr()=default;
 bool Ocr::available(){return true;}
+OcrResult Ocr::run(const Image& image, int max_side_override) {
+    auto saved=impl_->options.max_side;
+    impl_->options.max_side=max_side_override;
+    impl_->options.validate();
+    try {
+        auto result=run(image);
+        impl_->options.max_side=saved;
+        return result;
+    } catch(...) {
+        impl_->options.max_side=saved;
+        throw;
+    }
+}
 Json Ocr::metadata() const {
     return {{"backend","onnxruntime"},{"runtimeVersion",Ort::GetVersionString()},{"opencvVersion",CV_VERSION},{"device","cpu"},
         {"model","PP-OCRv4 mobile / RapidOCR export"},{"detSha256",impl_->det_sha},{"recSha256",impl_->rec_sha},

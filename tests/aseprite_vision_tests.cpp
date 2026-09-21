@@ -26,14 +26,20 @@ int main(int argc, char** argv) {
         bool desktopBlocked = false, wrongDpi = false, minimized = false;
         std::string lastKey, phase;
         Json lastClickAt;
-        // Fake OCR output: "View" at (400, 8) 40x18 in strip coords.
+        // Simulate PP-OCRv4's actual behavior on the Aseprite menu bar: it
+        // merges all labels into one line, then the adapter substring-matches
+        // and interpolates a click point along the bounds. Line text is "File
+        // Edit Sprite Layer Frame Select View Help" (44 chars) with bounds
+        // starting at x=10 in the capture, width=500. Target "View" starts at
+        // index 34 (0-based inclusive) so the mock click should land near
+        // x = 10 + 500 * ((34 + 4/2) / 44) = 10 + 500 * 36/44 ≈ 419, y = center.
         Json ocrLines = Json::array(
-            {{{"text", "File"}, {"bounds", {{"x", 40}, {"y", 8}, {"width", 30}, {"height", 18}}},
-              {"recognitionScore", 0.92}},
-             {{"text", "View"}, {"bounds", {{"x", 400}, {"y", 8}, {"width", 40}, {"height", 18}}},
-              {"recognitionScore", 0.88}},
-             {{"text", "junk"}, {"bounds", {{"x", 800}, {"y", 8}, {"width", 40}, {"height", 18}}},
-              {"recognitionScore", 0.2}}});
+            {{{"text", "File Edit Sprite Layer Frame Select View Help"},
+              {"bounds", {{"x", 10}, {"y", 30}, {"width", 500}, {"height", 20}}},
+              {"recognitionScore", 0.98}},
+             {{"text", "Home"},
+              {"bounds", {{"x", 10}, {"y", 60}, {"width", 60}, {"height", 20}}},
+              {"recognitionScore", 0.9}}});
 
         auto mock = [&](const std::string& op, const Json& a) -> Json {
             ++calls;
@@ -67,6 +73,8 @@ int main(int argc, char** argv) {
                 require(a.at("image") == "C:\\tmp\\fake.png",
                         "vision.ocr must consume the captured strip path");
                 require(a.contains("ocrModels"), "vision.ocr must receive an ocrModels path");
+                require(a.contains("ocrMaxSide"),
+                        "vision.ocr must pass an ocrMaxSide override");
                 return {{"status", "ok"}, {"textLines", ocrLines}};
             }
             if (op == "input.click") {
@@ -114,7 +122,7 @@ int main(int argc, char** argv) {
             }
             require(rejected, "keyChord accepted extra argument");
         }
-        // --- 4. openMenu happy path clicks the OCR-located label.
+        // --- 4. openMenu happy path clicks the OCR-interpolated position.
         {
             captures = ocrs = clicks = 0;
             Json req = {{"windowRef", "w1"},
@@ -124,9 +132,12 @@ int main(int argc, char** argv) {
             require(r.at("status") == "ok", r.dump().c_str());
             require(captures == 1 && ocrs == 1 && clicks == 1,
                     "openMenu did not follow capture->ocr->click");
-            // Expected click: center of View bounds = 400+40/2=420, 8+18/2=17.
-            require(lastClickAt.at("x") == 420 && lastClickAt.at("y") == 17,
-                    "click point does not match OCR bounds center");
+            // Line: "File Edit Sprite Layer Frame Select View Help" (45 chars).
+            // "View" starts at index 36, target size 4. Fraction = (36+2)/45 =
+            // 0.8444. bounds x=10 w=500 → click x = 10 + round(500*38/45) =
+            // 10 + 422 = 432. y = 30 + 20/2 = 40.
+            require(lastClickAt.at("x") == 432 && lastClickAt.at("y") == 40,
+                    "click position does not match substring interpolation");
             require(r.value("ocrScore", 0.0) > 0.5, "score not surfaced");
         }
         // --- 5. openMenu rejects unknown menu name before any dispatch.
