@@ -12,8 +12,13 @@
   "menuBarHeightPx": 60,
   "keySettleMs": 60,
   "menuSettleMs": 120,
+  "clickSettleMs": 60,
   "ocrMinScore": 0.4,
   "ocrMaxSide": 2048,
+  "saveAsMenuItemX": 79,
+  "saveAsMenuItemY": 208,
+  "saveDialogOkX": 2237,
+  "saveDialogOkY": 1298,
   "actions": [
     {"action": "aseprite.keyChord",
      "description": "Press an arbitrary Aseprite hotkey combination (Ctrl+Z undo, Ctrl+S save, etc.). No screenshot verification; caller decides how to observe result.",
@@ -27,6 +32,9 @@
     {"action": "aseprite.click",
      "description": "Window-relative pointer click. x/y are pixels within the Aseprite window bounds (0,0 = top-left). Optional button (left/right/middle, default left) and count (1..3, default 1). Caller is responsible for locating the target — for canvas painting, first make sure the canvas is visible at a known window offset.",
      "example": {"action": "aseprite.click", "args": {"x": 1230, "y": 920}}},
+    {"action": "aseprite.saveAsDefault",
+     "description": "Save the currently open sprite via File > Save As... + click OK, accepting Aseprite's default filename. Reliable on Aseprite v1.2.15 which does NOT accept SendInput keyboard events inside its Allegro dialogs — the filename field, Ctrl+V paste, and Enter are all ignored, but mouse clicks on the OK button work. Custom filenames therefore require a caller-provided workaround (e.g. renaming the file after save). Coordinates for the Save As menu item and OK button are configurable in the profile.",
+     "example": {"action": "aseprite.saveAsDefault", "args": {}}},
     {"action": "aseprite.openMenu",
      "description": "Capture the top menu strip, OCR it, then click the labeled entry. Supported names: File, Edit, Sprite, Layer, Frame, Select, Tags, View, Help. Requires DP_WITH_OCR=ON. Returns the recognized OCR score and clicked window-relative point.",
      "example": {"action": "aseprite.openMenu", "args": {"name": "View"}}}

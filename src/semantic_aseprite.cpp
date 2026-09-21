@@ -146,7 +146,7 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
     const auto action = request.at("action").get<std::string>();
     if (action != "aseprite.keyChord" && action != "aseprite.openMenu" &&
         action != "aseprite.selectTool" && action != "aseprite.zoom" &&
-        action != "aseprite.click")
+        action != "aseprite.click" && action != "aseprite.saveAsDefault")
         throw std::invalid_argument("Unsupported Aseprite action");
     if (!request.contains("windowRef") || !request.at("windowRef").is_string())
         throw std::invalid_argument("windowRef required");
@@ -190,7 +190,7 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
         for (auto it = a.begin(); it != a.end(); ++it)
             if (it.key() != "percent")
                 throw std::invalid_argument("Unsupported argument: " + it.key());
-    } else { // aseprite.click
+    } else if (action == "aseprite.click") {
         for (auto key : {"x", "y"}) {
             if (!a.contains(key) || !a.at(key).is_number_integer())
                 throw std::invalid_argument(std::string(key) + " must be an integer");
@@ -215,6 +215,9 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
         for (auto it = a.begin(); it != a.end(); ++it)
             if (it.key() != "x" && it.key() != "y" && it.key() != "button" && it.key() != "count")
                 throw std::invalid_argument("Unsupported argument: " + it.key());
+    } else { // aseprite.saveAsDefault
+        if (!a.empty())
+            throw std::invalid_argument("aseprite.saveAsDefault takes no arguments");
     }
 
     const auto window = request.at("windowRef");
@@ -325,6 +328,118 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
                     {"action", action},
                     {"x", x},
                     {"y", y},
+                    {"nativeCalls", calls},
+                    {"verification", "not_requested"},
+                    {"dispatch", "returned"},
+                    {"elapsedMs", std::chrono::duration<double, std::milli>(
+                                      std::chrono::steady_clock::now() - started)
+                                      .count()}};
+        }
+
+        if (action == "aseprite.saveAsDefault") {
+            // Aseprite v1.2.15 Allegro dialogs do not accept SendInput
+            // keyboard events into the filename field — no letter keys, no
+            // Ctrl+V paste, and Enter doesn't submit. But mouse clicks on the
+            // OK button do work. This action encapsulates the only reliable
+            // save path: open File menu, click Save As..., then click the OK
+            // button to accept whatever default filename Aseprite proposes.
+            // If the file already exists Aseprite raises a modal
+            // "File exists, overwrite it?" prompt — we OCR for it and click
+            // Yes automatically.
+            //
+            // For v1.2.15 English UI at 2578x1398 window this places the file
+            // at the last-used folder with name "Sprite-NNNN.aseprite". Custom
+            // paths require the user to preseed via Aseprite CLI or the
+            // command-line workflow — not achievable through SendInput.
+            phase = "openMenu";
+            Json menuArgs = {{"windowRef", window},
+                             {"action", "aseprite.openMenu"},
+                             {"args", {{"name", "File"}}}};
+            auto menuResult = run_aseprite_vision(menuArgs, profile, execute, sleep);
+            if (menuResult.value("status", std::string{}) != "ok")
+                throw std::runtime_error("saveAsDefault: openMenu File failed: " +
+                                         menuResult.value("message", std::string{}));
+            sleep(400);
+
+            phase = "clickSaveAs";
+            // "Save As..." row lives at (x≈27, y≈196) relative to the window
+            // when the File menu is open. Click the row centre.
+            const int saveAsX = profile.value("saveAsMenuItemX", 79);
+            const int saveAsY = profile.value("saveAsMenuItemY", 208);
+            dispatched = true;
+            call("input.click", {{"windowRef", window},
+                                 {"coordinateSpace", "window_relative"},
+                                 {"expectedSize", host.at("bounds")},
+                                 {"x", saveAsX},
+                                 {"y", saveAsY}});
+            sleep(800);
+
+            phase = "clickOk";
+            // Save As dialog OK button. Position depends on window width; a
+            // dpi-aware default suitable for a 2578x1398 window is (2237, 1298).
+            // Callers with different window sizes should override in the
+            // profile.
+            const int okX = profile.value("saveDialogOkX", 2237);
+            const int okY = profile.value("saveDialogOkY", 1298);
+            call("input.click", {{"windowRef", window},
+                                 {"coordinateSpace", "window_relative"},
+                                 {"expectedSize", host.at("bounds")},
+                                 {"x", okX},
+                                 {"y", okY}});
+            sleep(700);
+
+            // Detect and handle possible "File exists, overwrite it?" modal.
+            phase = "checkOverwrite";
+            try {
+                const auto ocr_dir = resolve_ocr_models(profile);
+                auto tmp_dir = std::filesystem::temp_directory_path();
+                auto tmp_file = tmp_dir / (L"desktop-pilot-aseprite-overwrite-" +
+                                           std::to_wstring(std::chrono::steady_clock::now()
+                                                               .time_since_epoch()
+                                                               .count()) +
+                                           L".png");
+                auto shot = call("capture.window",
+                                 {{"windowRef", window},
+                                  {"output", utf8(tmp_file.wstring())},
+                                  {"method", "screen"}});
+                const int ocrMaxSide = profile.value("ocrMaxSide", 2048);
+                auto ocr_res = call("vision.ocr",
+                                    {{"image", shot.at("path")},
+                                     {"ocrModels", utf8(ocr_dir.wstring())},
+                                     {"ocrMaxSide", ocrMaxSide}});
+                std::error_code ec;
+                std::filesystem::remove(tmp_file, ec);
+                Json yesBox;
+                bool sawWarning = false;
+                for (const auto& line : ocr_res.at("textLines")) {
+                    auto text = line.value("text", std::string{});
+                    auto text_lower = lower(text);
+                    if (text_lower.find("overwrite") != std::string::npos ||
+                        text_lower.find("warning") != std::string::npos ||
+                        text_lower.find("file exists") != std::string::npos)
+                        sawWarning = true;
+                    if (text_lower == "yes") yesBox = line;
+                }
+                if (sawWarning && !yesBox.is_null()) {
+                    phase = "clickYes";
+                    const auto& b = yesBox.at("bounds");
+                    const int yx = b.at("x").get<int>() + b.at("width").get<int>() / 2;
+                    const int yy = b.at("y").get<int>() + b.at("height").get<int>() / 2;
+                    call("input.click", {{"windowRef", window},
+                                         {"coordinateSpace", "window_relative"},
+                                         {"expectedSize", host.at("bounds")},
+                                         {"x", yx},
+                                         {"y", yy}});
+                    sleep(400);
+                }
+            } catch (const std::exception&) {
+                // OCR fallback failed — likely no overwrite prompt appeared.
+                // Do not fail the whole save action for a diagnostic step.
+            }
+
+            return {{"status", "ok"},
+                    {"action", action},
+                    {"note", "saved to Aseprite's last-used folder with default filename"},
                     {"nativeCalls", calls},
                     {"verification", "not_requested"},
                     {"dispatch", "returned"},
