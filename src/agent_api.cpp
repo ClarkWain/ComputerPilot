@@ -58,6 +58,9 @@ Json AgentApi::tools() {
         action("type_text",{{"text",{{"type","string"}}}},{"text"}),
         action("press_keys",{{"chord",s}},{"chord"}),
         action("drag",{{"from",point},{"to",point}},{"from","to"}),
+        action("prepare_window",{{"client_size",objectSchema({{"width",{{"type","integer"},{"minimum",1},{"maximum",20000}}},{"height",{{"type","integer"},{"minimum",1},{"maximum",20000}}},{"unit",{{"const","dip96"}}}},{"width","height","unit"})},
+            {"minimum_client_size",objectSchema({{"width",{{"type","integer"},{"minimum",1},{"maximum",20000}}},{"height",{{"type","integer"},{"minimum",1},{"maximum",20000}}},{"unit",{{"const","dip96"}}}},{"width","height","unit"})}},
+            {"client_size"}),
         action("move",{{"points",{{"type","array"},{"minItems",1},{"maxItems",4096},{"items",{{"type","array"},{"minItems",2},{"maxItems",2},{"items",{{"type","integer"},{"minimum",0}}}}},{"description","Ordered [x,y] pairs in the latest state coordinateSpace; one continuous path."}}},
             {"hold",{{"type","string"},{"enum",{"left","right","middle"}},{"description","Optional: press at first point, hold through the path, release at end. Omit to move without pressing."}}}},{"points"})});
     actions[0]["oneOf"]=Json::array({Json{{"required",{"point"}},{"not",{{"required",{"control_id"}}}}},Json{{"required",{"control_id"}},{"not",{{"required",{"point"}}}}}});
@@ -70,10 +73,10 @@ Json AgentApi::tools() {
     };
     add("list_windows","List all open windows. No parameters. Read the returned titles and pids to identify the intended window_id; does not activate or resize.",objectSchema(Json::object()),true);
     auto region=objectSchema({{"x",{{"type","integer"},{"minimum",0}}},{"y",{{"type","integer"},{"minimum",0}}},{"width",{{"type","integer"},{"minimum",1}}},{"height",{{"type","integer"},{"minimum",1}}}},{"x","y","width","height"});
-    add("get_window_state","Get controls and semantic profiles by default. mode:image skips UI Automation and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.",objectSchema({{"window_id",s},{"mode",{{"type","string"},{"enum",{"controls","image","both"}},{"default","controls"}}},{"region",region},{"activate",{{"type","boolean"},{"default",true}}}},{"window_id"}),false);
+    add("get_window_state","Get compact controls and semantic profiles by default. detail:full restores complete control fields and longer text. mode:image skips UI Automation and profile discovery; mode:both includes controls/profiles and a screenshot. Screenshots return a local capture.path by default; image_delivery:inline also sends an MCP image. max_edge sets the screenshot's longest pixel edge (default 1600 for full windows; regions retain source size); it never enlarges the capture. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view. Restores focus unless activate:false.",objectSchema({{"window_id",s},{"mode",{{"type","string"},{"enum",{"controls","image","both"}},{"default","controls"}}},{"detail",{{"type","string"},{"enum",{"compact","full"}},{"default","compact"}}},{"image_delivery",{{"type","string"},{"enum",{"path","inline"}},{"default","path"}}},{"max_edge",{{"type","integer"},{"minimum",1},{"maximum",32000}}},{"region",region},{"activate",{{"type","boolean"},{"default",true}}}},{"window_id"}),false);
     auto semanticAction=objectSchema({{"action",s},{"args",{{"type","object"}}}},{"action","args"});
     add("execute_semantic","PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Native execution manages controls, colors, focus and waits. Stops on failure; inspect the result before retrying.",objectSchema({{"window_id",s},{"profile",s},{"actions",{{"type","array"},{"items",semanticAction},{"minItems",1},{"maxItems",256}}}},{"window_id","actions"}),false);
-    add("execute_batch","Execute basic actions on the last observed window. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.",objectSchema({{"window_id",s},{"actions",{{"type","array"},{"items",actionSchema},{"minItems",1},{"maxItems",256}}}},{"window_id","actions"}),false);
+    add("execute_batch","Execute basic actions on the last observed window. A standalone prepare_window action explicitly adjusts its client area in dip96 and returns the measured result; inspect again before input. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.",objectSchema({{"window_id",s},{"actions",{{"type","array"},{"items",actionSchema},{"minItems",1},{"maxItems",256}}}},{"window_id","actions"}),false);
     return rows;
 }
 Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& externalDispatch) {
@@ -119,17 +122,23 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
             return {{"status","ok"},{"windows",candidates},{"next","Read titles/pids to identify the intended window_id, then get_window_state. No activation occurred."}};
         }
         if(tool=="get_window_state") {
-            fields(a,{"window_id","mode","activate","region"});auto window_id=requiredText(a,"window_id");
+            fields(a,{"window_id","mode","detail","image_delivery","max_edge","activate","region"});auto window_id=requiredText(a,"window_id");
             if(!targets_.contains(window_id))return failure("unknown_window","Use a window_id returned by list_windows in this session.","list_windows");
             observations_.erase(window_id);
             auto mode=a.value("mode",std::string("controls"));if(mode!="both"&&mode!="image"&&mode!="controls")throw std::invalid_argument("mode must be image, controls or both");
+            auto detail=a.value("detail",std::string("compact"));if(detail!="compact"&&detail!="full")throw std::invalid_argument("detail must be compact or full");
+            auto imageDelivery=a.value("image_delivery",std::string("path"));if(imageDelivery!="path"&&imageDelivery!="inline")throw std::invalid_argument("image_delivery must be path or inline");
             if(a.contains("region")&&mode=="controls")throw std::invalid_argument("region requires mode:image or both");
+            if(mode=="controls"&&imageDelivery=="inline")throw std::invalid_argument("image_delivery:inline requires mode:image or both");
+            if(a.contains("max_edge")&&(mode=="controls"||!a["max_edge"].is_number_integer()||a["max_edge"].get<int64_t>()<1||a["max_edge"].get<int64_t>()>32000))throw std::invalid_argument("max_edge requires image/both and integer 1..32000");
             auto w=a.value("activate",true)?prepareWindow(window_id):dispatch("window.get",{{"windowRef",window_id}});if(operation_failed(w))return w;
             Observation o;o.id="state-"+std::to_string(++serial_);o.window=w;
             Json result={{"status","ok"},{"window_id",window_id},{"title",w.value("title",std::string{})},
                 {"foreground",w.value("foreground",false)},{"coordinateSpace","window_relative_physical_pixels"},
                 {"size",{{"width",w["bounds"]["width"]},{"height",w["bounds"]["height"]}}},
                 {"next","Prefer execute_semantic if a profile matches; otherwise execute_batch. Inspect again to verify the result."}};
+            if(w.contains("client")&&w.contains("display"))result["layout"]={{"clientDip96",w["client"]["dip96"]},
+                {"displayDpi",w["display"]["dpi"]},{"dpiAwareness",w.value("dpiAwareness",std::string("unknown"))}};
             // A screenshot must remain available when UI Automation is slow or broken.
             // An empty unchecked catalog is not evidence that an application is incompatible.
             Json profiles={{"status","not_checked"},{"profiles",Json::array()},{"unavailable",Json::array()},
@@ -172,9 +181,12 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                     if(e.value("name",std::string{}).empty()&&(e.value("role",std::string{})=="Pane"||e.value("role",std::string{})=="Window"))continue;
                     if(result["controls"].size()>=80){result["truncated"]=true;break;}
                     auto ref=e.at("elementRef").get<std::string>();o.controls[ref]=e;
-                    Json c={{"control_id",ref},{"name",cap(e.value("name",std::string{}),256)},{"role",e.value("role",std::string{})}};
-                    for(auto key:{"value","enabled","offscreen"})if(e.contains(key))
-                        c[key]=(std::string(key)=="value"&&e[key].is_string())?Json(cap(e[key].get<std::string>(),2048)):e[key];
+                    Json c={{"control_id",ref},{"name",cap(e.value("name",std::string{}),detail=="compact"?128:256)},{"role",e.value("role",std::string{})}};
+                    for(auto key:{"value","enabled","offscreen"})if(e.contains(key)) {
+                        if(detail=="compact" && ((std::string(key)=="value" && (e[key].is_null() || e[key]=="")) ||
+                            (std::string(key)=="enabled" && e[key]==true) || (std::string(key)=="offscreen" && e[key]==false)))continue;
+                        c[key]=(std::string(key)=="value"&&e[key].is_string())?Json(cap(e[key].get<std::string>(),detail=="compact"?256:2048)):e[key];
+                    }
                     if(e.contains("bounds")&&e["bounds"].is_object()) {
                         c["bounds"]=Json::array({
                             e["bounds"]["x"].get<int>()-w["bounds"]["x"].get<int>(),
@@ -189,16 +201,17 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                 const char* format=std::getenv("DP_IMAGE_FORMAT");
                 const bool webp=webp_available()&&format&&std::string(format)=="webp";
                 auto path=std::filesystem::temp_directory_path()/std::filesystem::u8path("desktop-pilot-observe-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())+(webp?".webp":".png"));
-                Json captureArgs={{"windowRef",window_id},{"method","screen"},{"output",utf8(path.wstring())},{"maxEdge",1600}};
+                Json captureArgs={{"windowRef",window_id},{"method","screen"},{"output",utf8(path.wstring())},{"maxEdge",a.value("max_edge",a.contains("region")?32000:1600)}};
                 if(a.contains("region")) {fields(a["region"],{"x","y","width","height"});captureArgs["region"]=a["region"];captureArgs["lossless"]=true;}
                 auto capture=dispatch("capture.window",captureArgs);
                 if(operation_failed(capture))return capture;
+                capture["delivery"]=imageDelivery;
                 result["capture"]=capture;o.capture=capture;
                 result["coordinateSpace"]="image_pixels";
                 result["inputSize"]={{"width",capture["width"]},{"height",capture["height"]}};
             }
             auto after=dispatch("window.get",{{"windowRef",window_id}});if(operation_failed(after))return after;
-            if(after["bounds"]!=w["bounds"])return failure("geometry_changed","Window moved while observing.","get_window_state");
+            if(after["bounds"]!=w["bounds"]||after.value("dpi",Json())!=w.value("dpi",Json())||after.value("client",Json())!=w.value("client",Json())||after.value("display",Json())!=w.value("display",Json()))return failure("geometry_changed","Window geometry or DPI changed while observing.","get_window_state");
             profiles.erase("inspection");
             result["semantic"]=profiles;
             observations_[window_id]=std::move(o);return result;
@@ -223,6 +236,28 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
         if(found==observations_.end())return failure("state_required","Inspect this window before sending another input batch.","get_window_state");
         auto o=found->second;Json actions=a.at("actions");
         if(!actions.is_array()||actions.empty()||actions.size()>256)throw std::invalid_argument("actions must contain 1..256 items");
+        auto geometryChanged=[&](const Json& w){return w["bounds"]!=o.window["bounds"]||
+            w.value("dpi",Json())!=o.window.value("dpi",Json())||
+            w.value("client",Json())!=o.window.value("client",Json())||
+            w.value("display",Json())!=o.window.value("display",Json());};
+        if(actions[0].is_object()&&actions[0].value("type",std::string{})=="prepare_window") {
+            if(actions.size()!=1)throw std::invalid_argument("prepare_window must be the only action; inspect the new layout before input");
+            const auto& action=actions[0];fields(action,{"type","client_size","minimum_client_size"});
+            auto size=[&](const Json& value){fields(value,{"width","height","unit"});
+                if(value.value("unit",std::string{})!="dip96")throw std::invalid_argument("client size unit must be dip96");
+                for(auto key:{"width","height"})if(!value.contains(key)||!value[key].is_number_integer()||value[key].get<int64_t>()<1||value[key].get<int64_t>()>20000)throw std::invalid_argument("client size must be 1..20000 dip96");
+            };
+            const auto& preferred=action.at("client_size");size(preferred);
+            const auto& minimum=action.value("minimum_client_size",preferred);size(minimum);
+            for(auto key:{"width","height"})if(minimum[key].get<int>()>preferred[key].get<int>())throw std::invalid_argument("minimum client size exceeds preferred size");
+            auto current=prepareWindow(window_id);if(operation_failed(current))return current;
+            if(geometryChanged(current))return failure("geometry_changed","Window changed since observation.","get_window_state");
+            observations_.erase(window_id);
+            auto prepared=dispatch("window.prepare",{{"windowRef",window_id},{"width",preferred["width"]},{"height",preferred["height"]},
+                {"minimumWidth",minimum["width"]},{"minimumHeight",minimum["height"]}});
+            prepared["next"]="get_window_state to inspect actual layout before further input";
+            return prepared;
+        }
         Json planned=Json::array();
         auto point=[&](const Json& p) {
             fields(p,{"x","y"});
@@ -294,7 +329,7 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                 if(step["delay_ms"].get<int>()>0)std::this_thread::sleep_for(std::chrono::milliseconds(step["delay_ms"].get<int>()));
                 auto w=prepareWindow(window_id);
                 if(operation_failed(w))r=w;
-                else if(w["bounds"]!=o.window["bounds"])r=failure("geometry_changed","Window moved/resized since observation.","get_window_state");
+                else if(geometryChanged(w))r=failure("geometry_changed","Window geometry or DPI changed since observation.","get_window_state");
                 else {
                     if(!step["control_id"].is_null()) {
                         auto current=dispatch("ui.get",{{"elementRef",step["control_id"]["elementRef"]}});

@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "name": "Save an open classic Paint document as PNG",
+  "target": { "titleContains": "画图" }
+}

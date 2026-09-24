@@ -78,6 +78,10 @@ bool semantic_evidence_current(const SemanticEvidence& evidence, const std::stri
     for (auto key : {"windowRef","pid","dpi","bounds","className","executable","enabled","minimized","foreground"})
         current = current && evidence.window.contains(key) && window.contains(key) &&
             evidence.window.at(key) == window.at(key);
+    for (auto key : {"client","display","dpiAwareness"})
+        if (evidence.window.contains(key) || window.contains(key))
+            current = current && evidence.window.contains(key) && window.contains(key) &&
+                evidence.window.at(key) == window.at(key);
     return current;
 }
 static Json run_shape(const Json& request, const Json& profile, const SemanticCall& execute,
@@ -89,7 +93,7 @@ static Json run_shape(const Json& request, const Json& profile, const SemanticCa
         {"drawing.drawCircle", "ellipse"}, {"drawing.drawEllipse", "ellipse"},
         {"drawing.drawRectangle", "rectangle"}, {"drawing.drawRoundedRectangle", "roundedRectangle"},
         {"drawing.drawLine", "line"}, {"drawing.drawPolyline", "brushMenu"}, {"drawing.drawPolygon", "polygon"}, {"drawing.drawText", "text"}};
-    if (profile.at("schemaVersion") != 1 || !tools.contains(action))
+    if ((profile.at("schemaVersion") != 1 && profile.at("schemaVersion") != 2) || !tools.contains(action))
         throw std::invalid_argument("Unsupported semantic profile/action");
     const auto& a = request.at("args");
     auto point = [&](const char* key) {
@@ -203,7 +207,7 @@ static Json run_shape(const Json& request, const Json& profile, const SemanticCa
             if (!semantic_evidence_current(*evidence,windowRef,window,session)) throw std::runtime_error("profile_evidence_stale");
         }
         if (!profile_supports_dpi(profile, window.at("dpi").get<int>()) ||
-            window.at("bounds").at("width").get<int>() < profile.at("minimumWindowWidth").get<int>())
+            !profile_geometry_issue(profile,window).empty())
             throw std::runtime_error("profile_geometry_mismatch");
         if (!state.valid || state.windowRef != windowRef || state.bounds != window.at("bounds") ||
             !window.value("foreground", false) || !session.contains("lastInputTick") ||

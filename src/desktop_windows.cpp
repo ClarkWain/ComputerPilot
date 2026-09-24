@@ -2,9 +2,11 @@
 #include <objbase.h>
 #include <oleauto.h>
 #include <UIAutomation.h>
+#include <shellscalingapi.h>
 #include <wtsapi32.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <desktop_pilot/desktop.hpp>
 #include <desktop_pilot/text_diff.hpp>
 #include <desktop_pilot/fill_form.hpp>
@@ -173,9 +175,10 @@ struct Desktop::Impl {
     const std::string reference_prefix =
         std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64()) + "-";
     Impl() {
+        if(!SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
+            throw std::runtime_error("Cannot establish physical per-monitor DPI coordinate context");
         // Basic Win32 observation/input must survive unavailable UI Automation.
         com_result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
     void ensure_automation() {
         if (automation) return;
@@ -239,6 +242,21 @@ struct Desktop::Impl {
         GetWindowTextW(h, name, 4096);
         RECT r{};
         GetWindowRect(h, &r);
+        RECT client{};
+        POINT clientOrigin{};
+        const bool clientMeasured=GetClientRect(h,&client) && ClientToScreen(h,&clientOrigin);
+        const auto monitor=MonitorFromWindow(h,MONITOR_DEFAULTTONEAREST);
+        MONITORINFOEXW monitorInfo{};monitorInfo.cbSize=sizeof(monitorInfo);
+        const bool displayMeasured=monitor && GetMonitorInfoW(monitor,&monitorInfo);
+        UINT monitorDpiX=0,monitorDpiY=0;
+        const bool dpiMeasured=displayMeasured && SUCCEEDED(GetDpiForMonitor(monitor,MDT_EFFECTIVE_DPI,&monitorDpiX,&monitorDpiY)) && monitorDpiX>0 && monitorDpiY>0;
+        const auto awarenessContext=GetWindowDpiAwarenessContext(h);
+        const auto awareness=GetAwarenessFromDpiAwarenessContext(awarenessContext);
+        const char* awarenessName=AreDpiAwarenessContextsEqual(awarenessContext,DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED)?"unaware_gdi_scaled":
+            AreDpiAwarenessContextsEqual(awarenessContext,DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)?"per_monitor_v2":
+            awareness==DPI_AWARENESS_UNAWARE?"unaware":
+            awareness==DPI_AWARENESS_SYSTEM_AWARE?"system":
+            awareness==DPI_AWARENESS_PER_MONITOR_AWARE?"per_monitor_v1":"unknown";
         DWORD pid = 0;
         GetWindowThreadProcessId(h, &pid);
         Json result={{"windowRef", window_ref(h)},
@@ -250,7 +268,16 @@ struct Desktop::Impl {
                 {"minimized", bool(IsIconic(h))},
                 {"enabled", bool(IsWindowEnabled(h))},
                 {"foreground", h == GetForegroundWindow()},
-                {"dpi", GetDpiForWindow(h)}};
+                {"dpi", GetDpiForWindow(h)},
+                {"dpiAwareness",awarenessName}};
+        if(clientMeasured&&dpiMeasured) {
+            const int clientWidth=client.right-client.left,clientHeight=client.bottom-client.top;
+            result["client"]={{"physical",{{"x",clientOrigin.x},{"y",clientOrigin.y},{"width",clientWidth},{"height",clientHeight}}},
+                              {"dip96",{{"width",int(std::lround(double(clientWidth)*96/monitorDpiX))},
+                                         {"height",int(std::lround(double(clientHeight)*96/monitorDpiY))}}}};
+            result["display"]={{"name",utf8(monitorInfo.szDevice)},{"dpi",monitorDpiX},
+                               {"workArea",rect(monitorInfo.rcWork)}};
+        }
         wchar_t className[256]{}; GetClassNameW(h,className,256);
         result["className"]=utf8(className);
         if(HANDLE process=OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid)) {
@@ -671,7 +698,7 @@ Desktop::Desktop() : impl_(std::make_unique<Impl>()) {}
 Desktop::~Desktop() = default;
 Json Desktop::operations() {
     auto result = Json::parse(
-        R"(["system.info","process.list","display.list","window.list","window.get","window.foreground","window.activate","window.move","window.resize","window.minimize","window.maximize","window.restore","window.close","ui.tree","ui.find","ui.get","ui.at_point","ui.text","ui.focus","ui.invoke","ui.set_value","ui.fill","ui.select","ui.toggle","ui.expand","ui.collapse","ui.scroll","ui.set_range_value","capture.desktop","capture.window","capture.region","capture.element","input.move","input.click","input.scroll","input.drag","input.key_chord","input.type_text","clipboard.read","clipboard.write","runtime.capabilities"])");
+        R"(["system.info","process.list","display.list","window.list","window.get","window.foreground","window.activate","window.move","window.resize","window.prepare","window.minimize","window.maximize","window.restore","window.close","ui.tree","ui.find","ui.get","ui.at_point","ui.text","ui.focus","ui.invoke","ui.set_value","ui.fill","ui.select","ui.toggle","ui.expand","ui.collapse","ui.scroll","ui.set_range_value","capture.desktop","capture.window","capture.region","capture.element","input.move","input.click","input.scroll","input.drag","input.key_chord","input.type_text","clipboard.read","clipboard.write","runtime.capabilities"])");
     for (auto op : {"app.launch", "capture.display", "ui.click", "ui.selection", "clipboard.formats", "ui.fill_form", "ui.reveal", "window.children", "ui.message_text", "ui.context_menu", "system.session"})
         result.push_back(op);
     return result;
@@ -960,7 +987,7 @@ Json Desktop::execute(const std::string &op, const Json &a) {
     if (op == "window.get")
         return p.window_json(p.window(a));
     if (op.starts_with("window.")) {
-        if (a.value("preserveWindowGeometry", false) && (op == "window.move" || op == "window.resize" ||
+        if (a.value("preserveWindowGeometry", false) && (op == "window.move" || op == "window.resize" || op == "window.prepare" ||
                                                          op == "window.maximize" || op == "window.restore"))
             throw std::invalid_argument(
                 "preserveWindowGeometry conflicts with requested window geometry change");
@@ -994,6 +1021,70 @@ Json Desktop::execute(const std::string &op, const Json &a) {
             ShowWindowAsync(h, SW_MAXIMIZE);
         else if (op == "window.restore")
             ShowWindowAsync(h, SW_RESTORE);
+        else if(op=="window.prepare") {
+            const int preferredWidth=bounded(a,"width",0,1,20000),preferredHeight=bounded(a,"height",0,1,20000);
+            const int minimumWidth=bounded(a,"minimumWidth",preferredWidth,1,preferredWidth);
+            const int minimumHeight=bounded(a,"minimumHeight",preferredHeight,1,preferredHeight);
+            const auto monitor=MonitorFromWindow(h,MONITOR_DEFAULTTONEAREST);
+            MONITORINFOEXW m{};m.cbSize=sizeof(m);
+            if(!GetMonitorInfoW(monitor,&m))throw std::runtime_error("Cannot identify target display");
+            UINT dpiX=0,dpiY=0;
+            check(GetDpiForMonitor(monitor,MDT_EFFECTIVE_DPI,&dpiX,&dpiY),"display DPI");
+            if(!dpiX||!dpiY)throw std::runtime_error("Display DPI is unavailable");
+            auto outerFor=[&](int width,int height)->SIZE {
+                RECT wanted{0,0,int(std::lround(double(width)*dpiX/96)),int(std::lround(double(height)*dpiY/96))};
+                if(!AdjustWindowRectExForDpi(&wanted,DWORD(GetWindowLongPtrW(h,GWL_STYLE)),GetMenu(h)!=nullptr,
+                                             DWORD(GetWindowLongPtrW(h,GWL_EXSTYLE)),dpiX))
+                    throw std::runtime_error("Cannot estimate window frame size");
+                return {wanted.right-wanted.left,wanted.bottom-wanted.top};
+            };
+            const auto requested=outerFor(preferredWidth,preferredHeight);
+            const int availableWidth=m.rcWork.right-m.rcWork.left,availableHeight=m.rcWork.bottom-m.rcWork.top;
+            if(int(std::lround(double(minimumWidth)*dpiX/96))>availableWidth||
+               int(std::lround(double(minimumHeight)*dpiY/96))>availableHeight)
+                return {{"status","error"},{"code","insufficient_display_space"},
+                    {"requested",{{"width",preferredWidth},{"height",preferredHeight},{"unit","dip96"}}},
+                    {"minimum",{{"width",minimumWidth},{"height",minimumHeight},{"unit","dip96"}}},
+                    {"display",{{"name",utf8(m.szDevice)},{"dpi",dpiX},{"workArea",rect(m.rcWork)}}},
+                    {"dispatch","not_started"}};
+            ShowWindow(h,SW_RESTORE);
+            int targetWidth=std::min<int>(requested.cx,availableWidth),targetHeight=std::min<int>(requested.cy,availableHeight);
+            RECT before{};GetWindowRect(h,&before);
+            for(int attempt=0;attempt<3;++attempt) {
+                const int x=std::clamp(before.left,m.rcWork.left,m.rcWork.right-targetWidth);
+                const int y=std::clamp(before.top,m.rcWork.top,m.rcWork.bottom-targetHeight);
+                if(!SetWindowPos(h,nullptr,x,y,targetWidth,targetHeight,SWP_NOZORDER|SWP_NOACTIVATE))
+                    throw std::runtime_error("SetWindowPos failed while preparing client area");
+                const auto measured=p.window_json(h);
+                if(!measured.contains("client"))return {{"status","error"},{"code","client_measurement_unavailable"},
+                    {"dispatch","returned"},{"target",measured}};
+                if(!measured.contains("display") ||
+                   measured["display"].value("name",std::string{})!=utf8(m.szDevice))
+                    return {{"status","error"},{"code","display_changed_during_prepare"},
+                        {"dispatch","returned"},{"target",measured}};
+                const int actualWidth=measured["client"]["dip96"]["width"],actualHeight=measured["client"]["dip96"]["height"];
+                if(actualWidth>=preferredWidth-1&&actualHeight>=preferredHeight-1)break;
+                if(targetWidth==availableWidth&&targetHeight==availableHeight)break;
+                const int nextWidth=std::min(availableWidth,targetWidth+int(std::lround(double(std::max(0,preferredWidth-actualWidth))*dpiX/96)));
+                const int nextHeight=std::min(availableHeight,targetHeight+int(std::lround(double(std::max(0,preferredHeight-actualHeight))*dpiY/96)));
+                if(nextWidth==targetWidth&&nextHeight==targetHeight)break;
+                targetWidth=std::max(1,nextWidth);targetHeight=std::max(1,nextHeight);
+                GetWindowRect(h,&before);
+            }
+            const auto actual=p.window_json(h);
+            if(!actual.contains("client")||!actual.contains("display"))return {{"status","error"},{"code","client_measurement_unavailable"},
+                {"dispatch","returned"},{"target",actual}};
+            const auto physical=actual["client"]["physical"];
+            const int actualDpi=actual["display"]["dpi"].get<int>();
+            const bool enough=int64_t(physical["width"].get<int>())*96>=int64_t(minimumWidth)*actualDpi&&
+                int64_t(physical["height"].get<int>())*96>=int64_t(minimumHeight)*actualDpi;
+            const bool preferred=int64_t(physical["width"].get<int>())*96>=int64_t(preferredWidth-1)*actualDpi&&
+                int64_t(physical["height"].get<int>())*96>=int64_t(preferredHeight-1)*actualDpi;
+            return {{"status",enough?"ok":"error"},{"code",enough?(preferred?"prepared":"prepared_reduced"):"insufficient_client_area"},
+                    {"target",actual},{"requested",{{"width",preferredWidth},{"height",preferredHeight},{"unit","dip96"}}},
+                    {"minimum",{{"width",minimumWidth},{"height",minimumHeight},{"unit","dip96"}}},
+                    {"dispatch","returned"}};
+        }
         else if (op == "window.move" || op == "window.resize") {
             if (a.value("preserveWindowGeometry", false))
                 throw std::invalid_argument("preserveWindowGeometry conflicts with move/resize");

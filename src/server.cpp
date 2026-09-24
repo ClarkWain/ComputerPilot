@@ -225,7 +225,7 @@ int serve(bool mcp) {
                         try {
                             auto value = call(agent, dispatch, name, params.value("arguments", Json::object()), checkCancelled);
                             result = {
-                                {"content", Json::array({{{"type", "text"}, {"text", dump_json(value)}}})},
+                                {"content", Json::array()},
                                 {"structuredContent", value},
                                 {"isError",
                                  operation_failed(value)}};
@@ -233,7 +233,8 @@ int serve(bool mcp) {
                                 Json detail=value;
                                 for(int depth=0;depth<8 && detail.contains("failure");++depth)detail=Json(detail["failure"]);
                                 Json captured=detail.contains("capture")?detail["capture"]:detail;
-                                if (captured.contains("path") && captured.contains("imageRef"))
+                                if (captured.contains("path") && captured.contains("imageRef") &&
+                                    captured.value("delivery",std::string("inline"))=="inline")
                                     result["content"].push_back(
                                         {{"type", "image"},
                                          {"mimeType", captured.value("mimeType",std::string("image/png"))},
@@ -242,7 +243,7 @@ int serve(bool mcp) {
                         } catch (const std::exception &e) {
                             Json error = {{"status", "error"}, {"message", e.what()}};
                             result = {
-                                {"content", Json::array({{{"type", "text"}, {"text", dump_json(error)}}})},
+                                {"content", Json::array()},
                                 {"structuredContent", error},
                                 {"isError", true}};
                         }

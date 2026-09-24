@@ -12,6 +12,11 @@ int wmain(int argc,wchar_t** argv) {
         std::filesystem::copy_file(std::filesystem::path(argv[1]),dir/L"mspaint-classic-zh-CN/profile.json",std::filesystem::copy_options::overwrite_existing);
         auto p=load_profile(dir,"mspaint-classic-zh-CN");
         Json window={{"windowRef","w"},{"executable","MSPAINT.EXE"},{"className","MSPaintApp"},{"dpi",96},{"bounds",{{"width",1300}}}};
+        bool manualClient=false;
+        auto syncGeometry=[&]{if(manualClient)return;const int dpi=window["dpi"].get<int>();
+            window["client"]={{"dip96",{{"width",window["bounds"]["width"].get<int>()*96/dpi-15},{"height",700}}}};
+            window["display"]={{"dpi",dpi}};
+        };
         Json elements=Json::array();
         for(auto key:p["match"]["requiredSelectors"]) {
             auto e=p["selectors"][key.get<std::string>()];
@@ -20,13 +25,33 @@ int wmain(int argc,wchar_t** argv) {
         }
         bool truncated=false,hasMore=false,providerFailed=false;Json last;
         auto call=[&](const std::string& op,const Json& args)->Json {
-            if(op=="window.get")return window;
+            if(op=="window.get"){syncGeometry();return window;}
             if(op=="system.session")return {{"inputDesktopAccessible",true},{"lockState","unlocked"},{"lastInputTick",42}};
             if(op=="ui.tree"){++treeReads;return {{"status",providerFailed?"error":"ok"},{"elements",elements},{"truncated",truncated},{"has_more",hasMore}};}
             if(op=="semantic.perform"){++dispatches;last=args;return {{"status","ok"},{"completed",args["args"]["items"].size()}};}
             throw std::runtime_error("Unexpected call "+op);
         };
         auto check=[&](bool value,const char* text){++checks;if(!value)throw std::runtime_error(text);};
+        auto logical=p;logical["id"]="logical-profile";
+        logical["minimumClientSize"]={{"width",1100},{"height",600},{"unit","dip96"}};
+        logical["preferredClientSize"]={{"width",1200},{"height",700},{"unit","dip96"}};
+        std::filesystem::create_directories(dir/L"logical-profile");
+        {std::ofstream f(dir/L"logical-profile/profile.json");f<<logical;}
+        check(load_profile(dir,"logical-profile")["schemaVersion"]==2,"v2 profile loads without changing v1 meaning");
+        manualClient=true;
+        window["client"]={{"dip96",{{"width",1150},{"height",650}}}};
+        check(profile_geometry_issue(logical,window).empty(),"v2 uses measured logical client dimensions");
+        window["client"]["dip96"]["height"]=590;
+        check(profile_geometry_issue(logical,window)=="insufficient_client_area","v2 checks height as well as width");
+        auto logicalCatalog=discover_profiles(dir,"w",call);
+        bool logicalRejected=false;
+        for(const auto& unavailable:logicalCatalog["unavailable"])
+            if(unavailable["id"]=="logical-profile"&&unavailable["reasons"]==Json::array({"insufficient_client_area"}))logicalRejected=true;
+        check(logicalRejected,"v2 discovery reports measured client-area failure");
+        window.erase("client");
+        check(profile_geometry_issue(logical,window)=="client_area_unknown","v2 refuses missing measurement");
+        manualClient=false;
+        std::filesystem::remove_all(dir/L"logical-profile");
         auto discover=[&]{return discover_profiles(dir,"w",call);};
         auto catalog=discover();check(catalog["profiles"].size()==1,"compatible UI found");
         for(auto key:{"fill","outline"}) {auto e=p["selectors"][key];e["enabled"]=false;elements.push_back(e);}
@@ -45,7 +70,7 @@ int wmain(int argc,wchar_t** argv) {
         window["bounds"]["width"]=1300;
         {auto narrow=discover();
          check(narrow["profiles"].empty(),"144 DPI window too narrow for the scaled toolbar is rejected");
-         check(narrow["unavailable"][0]["reasons"][0]=="toolbar_too_narrow","narrow high-DPI window reports toolbar_too_narrow, not a missing control");}
+         check(narrow["unavailable"][0]["reasons"][0]=="insufficient_client_area","narrow high-DPI client area is rejected before UI scanning");}
         window["bounds"]["width"]=1700;window["dpi"]=120;
         check(discover()["profiles"].size()==1,"120 DPI is accepted when the classic UI fingerprint matches");
         {auto savedElement=elements[0];elements[0]["name"]="modern zoom control";

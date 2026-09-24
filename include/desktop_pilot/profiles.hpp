@@ -2,6 +2,7 @@
 #include <desktop_pilot/semantic.hpp>
 namespace dp {
 bool profile_supports_dpi(const Json& profile,int dpi);
+std::string profile_geometry_issue(const Json& profile,const Json& window);
 std::filesystem::path profiles_directory();
 // Discovery is read-only. A matching executable alone never proves UI compatibility.
 // inspection receives the attempted UI query, including exceptions converted to

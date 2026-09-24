@@ -15,6 +15,7 @@ try {
    foreach($crop in @($false,$true)) {
     $arguments=@{window_id=$target[0].window_id;mode='image'}
     if($crop){$arguments.region=@{x=30;y=260;width=600;height=500}}
+    $arguments.image_delivery='inline'
     $response=Send-Pilot $client 'tools/call' @{name='get_window_state';arguments=$arguments}
     if($response.isError){throw ($response.structuredContent|ConvertTo-Json -Depth 8 -Compress)}
     $state=$response.structuredContent

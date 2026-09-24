@@ -1,16 +1,16 @@
 # DesktopPilot
 
-DesktopPilot 是供 AI Agent 使用的 Windows 桌面操作程序，使用 C++20 / CMake 开发。Agent 读取窗口、控件和截图，提出操作意图；DesktopPilot 负责定位控件、恢复窗口焦点并执行。运行不需要 Node 或 Python。
+DesktopPilot 是供 AI Agent 使用的 Windows 桌面操作程序。当前重构分支使用 Node.js 处理 MCP、profile、语义动作和视觉推理，用 C++20 原生 worker 执行 Win32/UIA、键鼠与截图。Agent 读取窗口、控件和截图，提出操作意图；执行后再观察结果。正式 v0.4.0 发行包仍使用旧 C++ 服务，本分支的 Node 包处于验收阶段。
 
 核心能力是**应用语义操作**：例如 Agent 提交“画一个红色圆”，程序根据适合当前应用的 profile 完成选工具、设置填充、输入 RGB、绘制和提交。没有匹配 profile 时，仍可使用点击、文本输入、按键、拖动和连续鼠标路径。
 
 ## v0.4.0 更新与升级
 
-本版将 MCP 接口统一为下面四个工具，加入应用 profile、连续鼠标路径、批次内样式和控件复用、桌面环境检查、焦点恢复，以及限制尺寸的 WebP 截图。下载 [v0.4.0](https://github.com/ClarkWain/DesktopPilot/releases/tag/v0.4.0)，或按下方步骤从源码构建。
+本版将 MCP 接口统一为下面四个工具，加入应用 profile、连续鼠标路径、批次内样式和控件复用、桌面环境检查、焦点恢复，以及可限制尺寸的截图。下载 [v0.4.0](https://github.com/ClarkWain/DesktopPilot/releases/tag/v0.4.0)，或按下方步骤从源码构建。
 
 从 v0.3.0 升级时，需要按 [MCP 文档](docs/MCP.md) 修改旧工具调用，更新 skill，并重启 MCP 服务、刷新工具列表；旧工具名不保留兼容入口。经典中文版 Paint 是当前提供的绘图 profile，不能直接套用于任意 Paint 版本或其他软件。
 
-动作执行完成不代表画面正确。逐图形像素抽样方案已撤销；Agent 在批次后查看截图验收。小尺寸原生多边形仍有已知问题，实验中的扫描线绘法尚未集成为自动语义后端。完整变更见 [CHANGELOG](CHANGELOG.md)，验证范围见 [验证记录](docs/OPTIMIZATION-VALIDATION.md)。
+动作执行完成不代表画面正确。逐图形像素抽样方案已撤销；Agent 在批次后查看截图验收。小尺寸原生多边形仍有已知问题，实验中的扫描线绘法尚未集成为自动语义后端。完整变更见 [CHANGELOG](CHANGELOG.md)，验证范围见 [验证记录](docs/validation/OPTIMIZATION-VALIDATION.md)。
 
 ## 四个工具
 
@@ -27,23 +27,26 @@ DesktopPilot 是供 AI Agent 使用的 Windows 桌面操作程序，使用 C++20
 
 ## 快速开始
 
-Windows x64 Release 解压后使用 `bin/desktop-pilot.exe`，需要 Microsoft Visual C++ 2015–2022 x64 Runtime。源码构建：
+旧 v0.4.0 发行包仍使用 `bin/desktop-pilot.exe`。在此重构分支验证 Node 入口时，先构建平台 worker 和 Node 包：
 
 ```powershell
-cmake --preset core-only
-cmake --build --preset core-only --parallel 4
-pwsh -NoProfile -File examples/onboarding/start.ps1 -Task check
-pwsh -NoProfile -File examples/onboarding/start.ps1 -Task form
+cmake --preset windows-release
+cmake --build --preset windows-release --parallel 4
+npm ci --prefix node
+npm test --prefix node
+node node/dist/src/index.js
 ```
 
-`form` 创建自己的测试窗口，填写字段、点击 Apply 并核验结果，结束后关闭测试窗口。
+新入口会启动同一用户会话中的 `desktop-pilot-native.exe`。旧 C++ 服务及其回归测试可使用 `core-only` CMake preset 显式构建；新平台构建默认不包含 C++ MCP、profile 或模型业务代码。
+
+固定语义流程的 Replay CLI 已可校验、导出和播放 `.dpreplay`；当前能力与远程桌面验证边界见 [Replay 说明](docs/guides/REPLAY.md)。
 
 **DesktopPilot 必须与目标软件在同一个 Windows 用户会话和输入桌面中运行。** 隔离桌面、锁屏或受限令牌可能使输入不可用。服务会返回原因和修复提示；同名桌面或截图成功不能证明输入可用。
 
-在 MCP 客户端中配置真实程序路径：
+便携验证包使用包内固定 Node 运行时。构建和验收方式见 [Node 打包说明](node/README.md)；配置 MCP 客户端时填写解压后的两个绝对路径：
 
 ```json
-{"mcpServers":{"desktop-pilot":{"command":"C:/实际安装目录/bin/desktop-pilot.exe","args":["serve"]}}}
+{"mcpServers":{"desktop-pilot":{"command":"C:/实际安装目录/runtime/node.exe","args":["C:/实际安装目录/node/dist/src/index.js"]}}}
 ```
 
 若 Agent 没有 MCP 接口，可以复用仓库附带的持久 PowerShell 客户端，见 [完整接入示例](docs/MCP.md)。安装或更新 Agent skill：
@@ -74,25 +77,26 @@ pwsh -NoProfile -File skills/desktoppilot/scripts/install.ps1 -Update
 
 ## 能力与边界
 
-- 截图按需返回，整窗最长边 1600，默认 PNG（对模型宿主兼容性最好）；基础操作自动转换截图坐标，局部检查使用无损截图。确认宿主支持 WebP 时配置 `DP_IMAGE_FORMAT=webp` 以减少字节。
+- 截图按需捕获，默认只返回本机路径；需要直接发送 MCP 图片时指定 `image_delivery:"inline"`。整窗默认最长边 1600，可用 `max_edge` 调整；默认 PNG，局部检查默认保留原始像素并无损编码。基础操作自动转换截图坐标。确认宿主支持 WebP 时配置 `DP_IMAGE_FORMAT=webp` 以减少字节。
 - Paint 的密集多边形会在最多一画布像素误差内去除冗余顶点并选择较长起始边。小多边形仍有部分绘制失败的已知案例，不能用于严格逐像素复刻。执行器报告动作执行情况；整批完成后由 Agent 查看截图，判断绘制结果和质量。
 - 单击 control_id 时优先调用控件的 Invoke 能力；不支持才使用前台指针。仍需前台输入的路径自动恢复焦点，但不承诺任意后台绘图。模态弹窗和持续遮挡返回具体阻塞，不盲目重放。
-- 内部 `app.launch` 对新建且唯一匹配 profile 的窗口应用 recommendedWindow 尺寸，并限制在工作区内；已有窗口观察时不自动调整。
+- 内部 `app.launch` 对新建且唯一匹配 profile 的窗口应用尺寸建议；已有窗口观察时不自动调整。需要调整已有窗口时，在观察后单独调用 `execute_batch` 的 `prepare_window`，按 96-DPI 逻辑客户区给出期望和最低尺寸，执行后重新观察。经典 Paint profile 已改为按客户区宽高判断兼容性；新版 Paint 和 Aseprite 保留既有范围。
 
 - 内置 profile 目前只有**经典简体中文 Paint**，支持图形、文字、刷子选择和 PNG 另存为；不是所有 Paint 版本通用。见 [profile 条件和参数](docs/SEMANTIC-PROFILES.md)。
 - Photoshop、Blender、Aseprite 等应用没有内置专用语义适配；可依据实际截图和控件使用基础操作。
 - 语义匹配不等于成品验收。绘图派发成功不保证像素级尺寸或美术质量，提交按钮点成功也不代表网站任务完成。
-- 核心版不含 AI 模型；视觉解析是可选构建能力，发行包不附带模型权重。
+- Node 视觉模块已接入 PP-OCRv4 和转换后的 OmniParser ONNX；当前只完成固定图片的等价性验证，模型及许可证需在发布前检查。旧 v0.4.0 核心发行包不附带模型权重。
 - 对外 MCP 只有上述四个工具，旧工具名不保留别名。底层原生 JSONL 协议供开发调试使用，日常 Agent 无需学习。
 
 ## 文档
 
+- [文档分类目录](docs/README.md)
 - [Agent Skill：用途、通讯、完整任务与故障处理](skills/desktoppilot/SKILL.md)
 - [MCP 接入与调用示例](docs/MCP.md)
 - [工具参数参考（由程序生成）](docs/AGENT-API.md)
 - [可运行入门示例](examples/onboarding/README.md)
 - [语义 profile 适配](docs/SEMANTIC-PROFILES.md)
-- [构建](docs/BUILDING.md)、[开发协议](docs/PROTOCOL.md)、[底层操作](OPERATIONS.md)
+- [构建](docs/guides/BUILDING.md)、[开发协议](docs/PROTOCOL.md)、[底层操作](OPERATIONS.md)
 
 ## 许可证
 

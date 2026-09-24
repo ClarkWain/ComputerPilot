@@ -6,7 +6,7 @@ void require(bool ok,const char* message){if(!ok)throw std::runtime_error(messag
 int main(int argc,char** argv){try{
     require(argc==2,"profile required");std::ifstream f(argv[1]);auto profile=Json::parse(f);
     int calls=0,draws=0,width=1;bool mismatch=false,zoomBad=false,failDraw=false;std::string focused,hex="#000000";
-    Json sent,host={{"x",-9},{"y",-9},{"width",1800},{"height",1200}};
+    Json sent,host={{"x",-9},{"y",-9},{"width",1900},{"height",1200}};
     auto mock=[&](const std::string& op,const Json& a)->Json{
         ++calls;
         if(op=="system.session")return {{"inputDesktopAccessible",true},{"lockState","unlocked"}};

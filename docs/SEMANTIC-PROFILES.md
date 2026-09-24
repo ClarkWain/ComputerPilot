@@ -14,7 +14,7 @@
 4. execute_semantic 重新检查 profile，校验全部动作参数，然后执行；失败即停止，不回滚已完成内容。
 5. 读取 completed、verification 或 failure，再获取新状态核验实际效果。派发完成不等于画面正确。
 
-基础操作和语义操作可以交替使用，但不能混在同一 actions 数组：基础项用 type，语义项用 action/args。例如语义选择水彩刷之后，重新观察，用 execute_batch 的 move 路径绘制自由笔迹。
+基础操作和语义操作可以交替使用，但不能混在同一 actions 数组：基础项用 type，语义项用 action/args。例如语义选择水彩刷之后，重新观察，用 execute_batch 的 move 路径绘制自由笔迹。经典中文版画图还提供 `document.setCanvasSize`，通过“映像属性”设置画布像素宽高；执行前需确认目标为新建或允许调整的文档。
 
 ## 根据实际窗口选择
 
@@ -35,9 +35,13 @@
 
 120 DPI 已补充经典配置匹配和坐标换算的模拟回归测试；尚未完成经典版画图在 120 DPI 下的实机验收。
 
-`mspaint-modern-zh-CN` 使用独立 `paint-modern` 适配器，已实测新版 11.2605.81.0、120 DPI、100% 缩放。要求完整可见画布、展开工具栏（最小宽度 1500，且必须通过控件校验）。支持 `drawing.selectBrush`（brush/pencil）、`drawing.setColor`（RGB）、`drawing.setStrokeWidth`（1..24、26、28、30）、`drawing.drawPolyline`（points/closed/stroke）及 `drawing.fillAt`（position/color）。具体参数以返回示例为准。画布原点直接读取实际边界，100% 下坐标不再乘 DPI；笔宽通过 RangeValue 按分段索引写入 并回读像素文本。设置回读成功和动作派发仍需截图验收。原生形状、文字、保存、其他 DPI 和缩放尚未开放。不同版本依据见 [Paint 版本适配](PAINT-VERSION-ADAPTATION.md)。
+`mspaint-modern-zh-CN` 使用独立 `paint-modern` 适配器，已实测新版 11.2605.81.0、120 DPI、100% 缩放。要求完整可见画布、展开工具栏（最小宽度 1500，且必须通过控件校验）。支持 `drawing.selectBrush`（brush/pencil）、`drawing.setColor`（RGB）、`drawing.setStrokeWidth`（1..24、26、28、30）、`drawing.drawPolyline`（points/closed/stroke）及 `drawing.fillAt`（position/color）。具体参数以返回示例为准。画布原点直接读取实际边界，100% 下坐标不再乘 DPI；笔宽通过 RangeValue 按分段索引写入 并回读像素文本。设置回读成功和动作派发仍需截图验收。原生形状、文字、保存、其他 DPI 和缩放尚未开放。不同版本依据见 [Paint 版本适配](guides/PAINT-VERSION-ADAPTATION.md)。
 
 状态为实验性：历史实测存在 1 像素栅格舍入误差，尚未完成所有动作的逐像素位置、尺寸、描边验收。语义派发成功不等于艺术质量或像素精度达标。
+
+`aseprite-vision-en` 在 Node 实验入口中提供热键、选工具、缩放、窗口相对点击，以及基于 Node OCR 的 `aseprite.openMenu` 和 `aseprite.saveAsDefault`。`openMenu` 截取顶部菜单栏，只有识别到英文菜单名、分数达到阈值且点击点位于菜单栏内才会点击。发现阶段也会检查英文 `File` 菜单；证据不足时返回 `visual_menu_not_confirmed`，不把该 profile 列为可用。本机 Aseprite v1.2.15 是中文界面，实测能启动和调整临时窗口，但无法确认英文菜单，因此未派发菜单点击；英文界面的真实动作仍待验收。
+
+`saveAsDefault` 沿用既有 Aseprite v1.2.15 固定对话框坐标，仅在窗口物理外框约为 2578×1398、DPI 为 96 时列入可用动作；执行前再次检查，尺寸或 DPI 不符会在点击前失败。它使用应用的默认文件名和最近使用的目录，可能出现覆盖确认；回执的 `verification:not_requested` 不表示已核实磁盘文件。没有保存任务时不要调用。Node OCR 对固定图片已验证，旋转文字预处理与旧实现仍未完全等价。
 
 ## 调用例子
 
@@ -120,35 +124,41 @@ unavailable 的元素包含 id 和 reasons，例如 dpi_mismatch、toolbar_too_n
 
 当前目录提供调用示例，不提供每个动作的 JSON Schema。参数范围由 C++ 动作解析器校验，使用者按本文动作表和实际 example 填写；不能把示例里没出现的功能视为支持。
 
-### profile.json 文件协议（schemaVersion 1）
+### profile.json 文件协议（schemaVersion 1/2）
 
 | 字段 | 类型与职责 |
 |---|---|
-| schemaVersion | 整数，当前必须为 1 |
+| schemaVersion | 整数；1 保持原字段语义，2 使用逻辑客户区门槛 |
 | id | 字符串，必须与目录名一致；字母、数字、连字符、下划线、点，不允许路径或单独的点 |
 | description | 字符串，向 Agent 说明适用界面和限制 |
 | coordinates | 字符串，向 Agent 说明原点、单位、缩放与参数省略规则 |
 | match.executable | 进程文件名，忽略大小写比较，如 mspaint.exe |
 | match.className | 顶层窗口类名，精确比较，如 MSPaintApp |
 | match.requiredSelectors | selectors 中的键名数组；完整 UI 查询中每个必须恰好匹配一个可用且可见控件 |
+| match.requiredMenuLabel | Aseprite 英文 profile 的可选视觉门槛；Node OCR 必须在顶部菜单栏确认指定标签 |
 | dpi / supportedDpi | dpi 是旧配置的单值；提供 supportedDpi 数组时以其中允许的值为准。当前 Paint 为 [96,120,144]，并在执行时校准工具栏尺寸与画布比例 |
-| minimumWindowWidth | 窗口宽度下限，按 DPI 缩放为 `minimumWindowWidth × dpi/96` 物理像素；高 DPI 下防止功能区图库折叠导致布局不匹配（太窄时报 toolbar_too_narrow） |
+| minimumWindowWidth（v1） | 窗口外框宽度下限，按目标显示器有效 DPI 缩放为物理像素；高 DPI 下防止功能区图库折叠导致布局不匹配（太窄时报 toolbar_too_narrow） |
+| minimumClientSize（v2） | 必填 `{width,height,unit:"dip96"}`；根据实测客户区的逻辑宽高判定，不达标时报 insufficient_client_area |
+| preferredClientSize（v2） | 可选 `{width,height,unit:"dip96"}`；新启动的匹配窗口可按此目标显式准备，并以 minimumClientSize 为最低要求 |
 | selectors | 命名控件定位对象；nameContains 为包含匹配，其余键如 name/role/automationId 为精确匹配 |
 | actions | 动作目录数组，每项含 action、description、example；只列 C++ 已实现并经适配的动作 |
 | 适配器专属字段 | 当前 Paint 还使用 referenceToolSize、canvasInset、菜单选项、RGB 字段、brushes、save、clickSettleMs 等；按实际实现定义，不是通用操作指令 |
 
 匹配器还检查窗口未最小化、未被禁用，以及控件查询未截断。达到这些条件只代表可尝试适配动作，不能证明绘图精度或作品质量。
 
+经典简体中文 Paint 已按 144 DPI 的一次性窗口实测迁移到 v2：推荐 1185×893、最低 1085×650 `dip96` 客户区；仍需在 96/120 DPI 及其他用户环境验收。新版 Paint 和 Aseprite 保持 v1，以保留现有布局范围；不要将旧 `recommendedWindow`（外框目标）和 `minimumWindowWidth` 直接改名为 v2 客户区字段。v1 的发现与执行现在共用同一宽度判定，物理门槛按目标显示器 DPI 换算。v2 必须实测客户区，缺少测量证据时返回 client_area_unknown；无论版本都要匹配实际控件。已有窗口只有收到显式 `execute_batch` 的 `prepare_window` 动作才会调整，观察和 profile 发现不会改尺寸。
+
 下面是当前 Paint 配置的结构片段，**用于说明字段关系，省略了动作执行所需的其他控件和选项，不能作为完整配置安装**：
 
 ```json
 {
-  "schemaVersion":1,
+  "schemaVersion":2,
   "id":"mspaint-classic-zh-CN",
   "description":"经典简体中文 Paint",
   "coordinates":"画布像素，100% 缩放、未滚动",
   "dpi":96,
-  "minimumWindowWidth":1100,
+  "minimumClientSize":{"width":1085,"height":650,"unit":"dip96"},
+  "preferredClientSize":{"width":1185,"height":893,"unit":"dip96"},
   "match":{"executable":"mspaint.exe","className":"MSPaintApp","requiredSelectors":["zoom","canvas","ellipse"]},
   "selectors":{
     "zoom":{"name":"100%","role":"Text"},
@@ -167,7 +177,7 @@ unavailable 的元素包含 id 和 reasons，例如 dpi_mismatch、toolbar_too_n
 
 ### Paint 执行与验收
 
-`recommendedWindow` 提供新建窗口的推荐尺寸（`units: dpi96`，由运行时按 DPI 换算并限制在工作区内）。内部 `app.launch` 会尝试准备刚启动的匹配窗口；读取已有窗口不会自动改变它的尺寸。查询控件超时、截断与 DPI 不匹配分别返回原因，不能一律通过放大窗口解决。
+v1 的 `recommendedWindow` 提供新建窗口的外框推荐尺寸（`units: dpi96`，由运行时按目标显示器 DPI 换算并限制在工作区内）；v2 的 `preferredClientSize` 提供逻辑客户区目标，准备后返回实际客户区和是否达到最低要求。内部 `app.launch` 会尝试准备刚启动的匹配窗口；读取已有窗口不会自动改变它的尺寸。查询控件超时、截断与 DPI 不匹配分别返回原因，不能一律通过放大窗口解决。
 
 执行器不逐图形截取和抽样检查像素。`completed`、`verification:scene_dispatched` 只报告动作执行情况，不代表图形正确。整批执行后由 Agent 获取画布截图，对照参考检查完整结果。
 

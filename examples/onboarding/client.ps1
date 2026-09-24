@@ -2,8 +2,18 @@
 # Both output streams are consumed; stdout remains JSON-RPC only.
 function Open-Pilot([string]$Executable) {
     $p=[Diagnostics.Process]::new()
-    $p.StartInfo.FileName=(Resolve-Path -LiteralPath $Executable).Path
-    $p.StartInfo.Arguments='serve'
+    $resolved=(Resolve-Path -LiteralPath $Executable).Path
+    if([IO.Path]::GetExtension($resolved) -ieq '.cmd'){
+        $bundle=Split-Path -Parent $resolved
+        $p.StartInfo.FileName=Join-Path $bundle 'runtime/node.exe'
+        $p.StartInfo.ArgumentList.Add((Join-Path $bundle 'node/dist/src/index.js'))
+    }elseif([IO.Path]::GetExtension($resolved) -ieq '.js'){
+        $p.StartInfo.FileName=(Get-Command node -ErrorAction Stop).Source
+        $p.StartInfo.ArgumentList.Add($resolved)
+    }else{
+        $p.StartInfo.FileName=$resolved
+        $p.StartInfo.ArgumentList.Add('serve')
+    }
     $p.StartInfo.UseShellExecute=$false
     $p.StartInfo.CreateNoWindow=$true
     $p.StartInfo.RedirectStandardInput=$true

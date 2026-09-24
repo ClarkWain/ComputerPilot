@@ -128,7 +128,7 @@ Json run_modern_paint(const Json& request,const Json& profile,const SemanticCall
         auto session=call("system.session",Json::object());
         if(!session.value("inputDesktopAccessible",false) || session.value("lockState",std::string{})=="locked")throw std::runtime_error("interactive_desktop_unavailable");
         auto host=call("window.get",{{"windowRef",window}});
-        if(!profile_supports_dpi(profile,host.value("dpi",0)) || !host.value("enabled",true) || host.value("minimized",false))throw std::runtime_error("unsupported_window_state");
+        if(!profile_supports_dpi(profile,host.value("dpi",0)) || !profile_geometry_issue(profile,host).empty() || !host.value("enabled",true) || host.value("minimized",false))throw std::runtime_error("unsupported_window_state");
         call("window.activate",{{"windowRef",window}});
         const auto& selectors=profile.at("selectors");
         // Canvas element is stable across a batch (Paint doesn't destroy the

@@ -7,7 +7,7 @@
   "minimumWindowWidth": 800,
   "description": "Aseprite v1.2.15 English UI — self-drawn Allegro UI, no UIA. Adapter drives it via screenshot OCR of the top menu strip and keyboard hotkeys. Drawing/canvas actions are intentionally not exposed here yet.",
   "coordinates": "window_relative pixels at capture DPI",
-  "match": {"executable": "aseprite.exe", "className": "Aseprite.Window", "requiredSelectors": []},
+  "match": {"executable": "aseprite.exe", "className": "Aseprite.Window", "requiredSelectors": [], "requiredMenuLabel": "File"},
   "selectors": {},
   "menuBarHeightPx": 60,
   "keySettleMs": 60,

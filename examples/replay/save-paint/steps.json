@@ -1,0 +1,13 @@
+[
+  {
+    "id": "save-png",
+    "profile": "mspaint-classic-zh-CN",
+    "action": {
+      "action": "document.saveAs",
+      "args": { "path": "{{runDir}}/paint.png", "format": "png", "overwrite": false }
+    },
+    "before": { "fileAbsent": "paint.png", "profileAvailable": "mspaint-classic-zh-CN" },
+    "settleTimeoutMs": 10000,
+    "expect": { "file": { "path": "paint.png", "minBytes": 100 } }
+  }
+]

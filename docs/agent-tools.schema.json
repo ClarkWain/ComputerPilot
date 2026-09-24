@@ -20,13 +20,42 @@
       "openWorldHint": true,
       "readOnlyHint": false
     },
-    "description": "Get controls and semantic profiles by default. mode:image skips UI Automation and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.",
+    "description": "Get compact controls and semantic profiles by default. change_mode:delta returns only changes since this connection's last complete observation of the same window and view; the first call or a reset returns full state. Unchanged screenshots are omitted, including inline images; small changes may return a positioned capture.kind:patch with a fullPath. Input coordinates still use the full image frame. detail:full restores complete control fields and longer text. mode:image skips UI Automation and profile discovery; mode:both includes controls/profiles and a screenshot. Screenshots return a local capture.path by default; image_delivery:inline also sends an MCP image. max_edge sets the screenshot's longest pixel edge (default 1600 for full windows; regions retain source size); it never enlarges the capture. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view. Restores focus unless activate:false.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "change_mode": {
+          "default": "full",
+          "enum": [
+            "full",
+            "delta"
+          ],
+          "type": "string"
+        },
         "activate": {
           "default": true,
           "type": "boolean"
+        },
+        "detail": {
+          "default": "compact",
+          "enum": [
+            "compact",
+            "full"
+          ],
+          "type": "string"
+        },
+        "image_delivery": {
+          "default": "path",
+          "enum": [
+            "path",
+            "inline"
+          ],
+          "type": "string"
+        },
+        "max_edge": {
+          "maximum": 32000,
+          "minimum": 1,
+          "type": "integer"
         },
         "mode": {
           "default": "controls",
@@ -83,7 +112,7 @@
       "openWorldHint": true,
       "readOnlyHint": false
     },
-    "description": "PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Native execution manages controls, colors, focus and waits. Stops on failure; inspect the result before retrying.",
+    "description": "PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Execution manages controls, colors, focus and waits. Stops on failure; inspect the result before retrying.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -132,7 +161,7 @@
       "openWorldHint": true,
       "readOnlyHint": false
     },
-    "description": "Execute basic actions on the last observed window. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.",
+    "description": "Execute basic actions on the last observed window. A standalone prepare_window action explicitly adjusts its client area in dip96 and returns the measured result; inspect again before input. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -330,6 +359,73 @@
                 "required": [
                   "from",
                   "to",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "client_size": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "height": {
+                        "maximum": 20000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "unit": {
+                        "const": "dip96"
+                      },
+                      "width": {
+                        "maximum": 20000,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "width",
+                      "height",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  "delay_ms": {
+                    "description": "Optional delay before this action; default 0",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "minimum_client_size": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "height": {
+                        "maximum": 20000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "unit": {
+                        "const": "dip96"
+                      },
+                      "width": {
+                        "maximum": 20000,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "width",
+                      "height",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  "type": {
+                    "const": "prepare_window"
+                  }
+                },
+                "required": [
+                  "client_size",
                   "type"
                 ],
                 "type": "object"

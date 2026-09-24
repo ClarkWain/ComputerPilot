@@ -68,12 +68,23 @@ Json Service::perform(const std::string &op, const Json &args) {
         for(const auto& entry:std::filesystem::directory_iterator(dir)) {
             if(!entry.is_directory()||!std::filesystem::exists(entry.path()/"profile.json"))continue;
             auto profile=load_profile(dir,utf8(entry.path().filename().wstring()));
-            if(!profile.contains("recommendedWindow")||profile["match"]["executable"]!=executable)continue;
+            if((!profile.contains("recommendedWindow")&&!profile.contains("preferredClientSize"))||profile["match"]["executable"]!=executable)continue;
             for(int attempt=0;attempt<20;++attempt) {
                 auto windows=desktop_.execute("window.list",{{"pid",launched["pid"]},{"includeHidden",true}})["windows"];
                 Json matches=Json::array();for(auto& w:windows)if(w["className"]==profile["match"]["className"])matches.push_back(w);
                 if(matches.size()==1) {
-                    auto w=matches[0];double scale=w.value("dpi",96)/96.0;
+                    auto w=matches[0];double scale=(w.contains("display")?w["display"].value("dpi",w.value("dpi",96)):w.value("dpi",96))/96.0;
+                    if(profile.contains("preferredClientSize")) {
+                        const auto& preferred=profile["preferredClientSize"];
+                        const auto& minimum=profile["minimumClientSize"];
+                        auto prepared=desktop_.execute("window.prepare",{{"windowRef",w["windowRef"]},
+                            {"width",preferred["width"]},{"height",preferred["height"]},
+                            {"minimumWidth",minimum["width"]},{"minimumHeight",minimum["height"]}});
+                        launched["windowRef"]=w["windowRef"];
+                        launched["windowPrepared"]=!operation_failed(prepared);
+                        launched["windowPreparation"]=prepared;
+                        return launched;
+                    }
                     desktop_.execute("window.restore",{{"windowRef",w["windowRef"]}});
                     int width=int(profile["recommendedWindow"]["width"].get<int>()*scale),height=int(profile["recommendedWindow"]["height"].get<int>()*scale);
                     auto displays=desktop_.execute("display.list",Json::object())["displays"];

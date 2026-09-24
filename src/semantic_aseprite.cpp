@@ -247,7 +247,7 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
         const auto& hb = host.at("bounds");
         const int win_x = hb.at("x").get<int>(), win_y = hb.at("y").get<int>(),
                   win_w = hb.at("width").get<int>(), win_h = hb.at("height").get<int>();
-        if (win_w < profile.at("minimumWindowWidth").get<int>())
+        if (!profile_geometry_issue(profile,host).empty())
             throw std::runtime_error("window_too_narrow");
 
         if (!host.value("foreground", false)) call("window.activate", {{"windowRef", window}});

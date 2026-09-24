@@ -1,0 +1,26 @@
+{
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "@types/adm-zip": "^0.5.7",
+    "adm-zip": "^0.6.1",
+    "onnxruntime-node": "1.30.0",
+    "sharp": "0.35.4"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.2",
+    "typescript": "7.0.2"
+  },
+  "name": "desktop-pilot-node",
+  "version": "0.4.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/tests/**/*.test.js",
+    "start": "node dist/src/index.js",
+    "replay": "node dist/src/replay/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

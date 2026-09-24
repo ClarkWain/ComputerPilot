@@ -1,6 +1,6 @@
 # DesktopPilot 与 Computer Use 协议及 Agent 接口对比
 
-> 历史分析：下文记录旧版接口。当前 DesktopPilot 已收敛为四个工具，computer_*、独立等待和 before/after 不再提供。现行用法以 [MCP.md](MCP.md) 为准。
+> 历史分析：下文记录旧版接口。当前 DesktopPilot 已收敛为四个工具，computer_*、独立等待和 before/after 不再提供。现行用法以 [MCP.md](../MCP.md) 为准。
 
 
 > 历史基线：本文对比重构前的接口。现已增加 desktop_* 常用层；当前用法以 README、MCP.md 和 AGENT-API.md 为准，第 7 节的部分建议已开始实现。
@@ -189,10 +189,10 @@ Agent 提供尺寸、调色板、行网格或像素段。中间层负责核验�
 
 DesktopPilot 可审计来源：
 
-- [MCP 接入](MCP.md)、[协议与执行语义](PROTOCOL.md)、[操作参考](../OPERATIONS.md)。
-- [窗口绑定与条件批处理](../BATCH-RELIABILITY.md)、[语义适配及验证范围](SEMANTIC-PROFILES.md)。
-- [MCP 工具 schema 与分发](../src/server.cpp)、[注册表与图像映射](../src/service.cpp)、[窗口检查与原生输入](../src/desktop_windows.cpp)、[桌面预检](../src/preflight.cpp)。
-- [Agent skill](../skills/desktoppilot/SKILL.md)、[Aseprite 指导](../skills/desktoppilot/references/aseprite.md)、[入门示例](../examples/onboarding/README.md)。
+- [MCP 接入](../MCP.md)、[协议与执行语义](../PROTOCOL.md)、[操作参考](../../OPERATIONS.md)。
+- [窗口绑定与条件批处理](../../BATCH-RELIABILITY.md)、[语义适配及验证范围](../SEMANTIC-PROFILES.md)。
+- [MCP 工具 schema 与分发](../../src/server.cpp)、[注册表与图像映射](../../src/service.cpp)、[窗口检查与原生输入](../../src/desktop_windows.cpp)、[桌面预检](../../src/preflight.cpp)。
+- [Agent skill](../../skills/desktoppilot/SKILL.md)、[Aseprite 指导](../../skills/desktoppilot/references/aseprite.md)、[入门示例](../../examples/onboarding/README.md)。
 
 Computer Use 来源为本机插件 `computer-use/26.908.70816` 包内的 `skills/computer-use/SKILL.md`、`docs/api.md` 和 `docs/guidance.md`。这里只引用接口名称并概述其契约，未复制实现，也未审计内部线协议。插件升级后需要重新核对。
 

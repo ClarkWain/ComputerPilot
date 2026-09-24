@@ -40,6 +40,27 @@ bool profile_supports_dpi(const Json& profile,int dpi) {
     for(const auto& value:profile.at("supportedDpi"))if(value==dpi)return true;
     return false;
 }
+std::string profile_geometry_issue(const Json& profile,const Json& window) {
+    if(profile.at("schemaVersion")==2) {
+        if(!window.contains("client") || !window["client"].contains("dip96"))return "client_area_unknown";
+        const auto& minimum=profile.at("minimumClientSize");
+        if(window["client"].contains("physical")&&window.contains("display")&&window["display"].contains("dpi")) {
+            const auto& size=window["client"]["physical"];
+            const auto dpi=window["display"]["dpi"].get<int>();
+            if(dpi<=0)return "client_area_unknown";
+            if(int64_t(size.at("width").get<int>())*96<int64_t(minimum.at("width").get<int>())*dpi ||
+               int64_t(size.at("height").get<int>())*96<int64_t(minimum.at("height").get<int>())*dpi)return "insufficient_client_area";
+        } else {
+            const auto& size=window["client"]["dip96"];
+            if(size.at("width").get<int>()<minimum.at("width").get<int>() ||
+               size.at("height").get<int>()<minimum.at("height").get<int>())return "insufficient_client_area";
+        }
+        return {};
+    }
+    const int dpi=window.contains("display")?window["display"].value("dpi",window.value("dpi",96)):window.value("dpi",96);
+    const long long requiredWidth=(long long)profile.at("minimumWindowWidth").get<int>()*(dpi>0?dpi:96)/96;
+    return window.at("bounds").at("width").get<int>()<requiredWidth?"toolbar_too_narrow":"";
+}
 std::filesystem::path profiles_directory() {
     wchar_t configured[32768]{};
     auto n=GetEnvironmentVariableW(L"DESKTOPPILOT_PROFILES_DIR",configured,32768);
@@ -61,7 +82,25 @@ Json load_profile(const std::filesystem::path& directory,const std::string& id) 
     std::ifstream file(directory/std::filesystem::u8path(id)/L"profile.json");
     if(!file)throw std::invalid_argument("Profile is not installed: "+id);
     auto p=Json::parse(file);
-    if(p.at("id")!=id||p.at("schemaVersion")!=1||!p.at("actions").is_array())throw std::invalid_argument("Invalid profile manifest: "+id);
+    if(p.at("id")!=id||!p.at("actions").is_array())throw std::invalid_argument("Invalid profile manifest: "+id);
+    const int version=p.at("schemaVersion").get<int>();
+    if(version!=1&&version!=2)throw std::invalid_argument("Unsupported profile schemaVersion: "+id);
+    if(version==2) {
+        for(auto key:{"minimumClientSize","preferredClientSize"}) {
+            if(!p.contains(key)) {if(std::string(key)=="preferredClientSize")continue;throw std::invalid_argument("Missing minimumClientSize: "+id);}
+            const auto& size=p.at(key);
+            if(!size.is_object()||size.value("unit",std::string{})!="dip96"||
+               !size.contains("width")||!size.contains("height")||
+               !size["width"].is_number_integer()||!size["height"].is_number_integer()||
+               size["width"].get<int>()<=0||size["height"].get<int>()<=0||
+               size["width"].get<int>()>20000||size["height"].get<int>()>20000)
+                throw std::invalid_argument("Invalid client size: "+id);
+        }
+        if(p.contains("preferredClientSize") &&
+           (p["preferredClientSize"]["width"].get<int>()<p["minimumClientSize"]["width"].get<int>() ||
+            p["preferredClientSize"]["height"].get<int>()<p["minimumClientSize"]["height"].get<int>()))
+            throw std::invalid_argument("Preferred client size is smaller than minimum: "+id);
+    }
     return p;
 }
 Json discover_profiles(const std::filesystem::path& directory,const std::string& window,const SemanticCall& call,Json* inspection) {
@@ -83,12 +122,7 @@ Json discover_profiles(const std::filesystem::path& directory,const std::string&
             Json reasons=Json::array();
             if(w.value("className",std::string{})!=match.at("className").get<std::string>())reasons.push_back("window_class_mismatch");
             if(!profile_supports_dpi(p,w.value("dpi",0)))reasons.push_back("dpi_mismatch");
-            // Ribbon galleries collapse based on logical width, so scale the physical threshold by DPI.
-            {
-                const int dpi=w.value("dpi",96);
-                const long long requiredWidth=(long long)p.at("minimumWindowWidth").get<int>()*(dpi>0?dpi:96)/96;
-                if(w.at("bounds").at("width").get<int>()<requiredWidth)reasons.push_back("toolbar_too_narrow");
-            }
+            if(auto issue=profile_geometry_issue(p,w);!issue.empty())reasons.push_back(issue);
             if(!w.value("enabled",true))reasons.push_back("window_blocked");
             if(w.value("minimized",false))reasons.push_back("window_minimized");
             if(reasons.empty()) {
@@ -118,9 +152,14 @@ Json discover_profiles(const std::filesystem::path& directory,const std::string&
                 if(std::find(reasons.begin(),reasons.end(),"ui_inspection_incomplete")!=reasons.end())next="Compatibility is unknown because control inspection was incomplete; do not resize or repeat unchanged scans. Inspect inspection.stopReason/provider error, then use get_window_state(mode=image) and execute_batch when the target is visually clear. No drawing was dispatched.";
                 else if(std::find(reasons.begin(),reasons.end(),"dpi_mismatch")!=reasons.end())next="DPI unsupported by this profile; resizing cannot fix DPI.";
                 else if(std::find(reasons.begin(),reasons.end(),"window_blocked")!=reasons.end())next="Target has a modal dialog; resolve that dialog before drawing.";
-                else if(std::find(reasons.begin(),reasons.end(),"toolbar_too_narrow")!=reasons.end())next="Toolbar is too narrow at this DPI (the ribbon gallery is collapsed); maximize the window (execute_batch press_keys Win+Up) or widen it past recommendedWindow, then observe again.";
+                else if(std::find(reasons.begin(),reasons.end(),"toolbar_too_narrow")!=reasons.end())next="Toolbar is too narrow at this DPI. If the task permits changing window size, use a standalone prepare_window action or maximize, then inspect again.";
+                else if(std::find(reasons.begin(),reasons.end(),"client_area_unknown")!=reasons.end())next="Physical client area or display DPI could not be measured; do not infer profile compatibility from outer window size.";
+                else if(std::find(reasons.begin(),reasons.end(),"insufficient_client_area")!=reasons.end())next="Client area is smaller than this profile requires; explicitly prepare the window, then inspect again.";
                 Json item={{"id",id},{"reasons",reasons},{"actual",{{"dpi",w.value("dpi",0)},{"width",w.at("bounds").at("width")}}},{"next",next}};
                 if(p.contains("recommendedWindow"))item["recommendedWindow"]=p["recommendedWindow"];
+                if(p.contains("preferredClientSize"))item["preferredClientSize"]=p["preferredClientSize"];
+                if(p.contains("minimumClientSize"))item["minimumClientSize"]=p["minimumClientSize"];
+                if(w.contains("client")&&w["client"].contains("dip96"))item["actualClientSize"]=w["client"]["dip96"];
                 if(!tree.is_null())for(auto key:{"stopReason","visited","truncated","has_more","evidenceComplete","message","code","providerError","metrics"})if(tree.contains(key))item["inspection"][key]=tree[key];
                 unavailable.push_back(item);
             }

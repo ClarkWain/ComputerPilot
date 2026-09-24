@@ -1,6 +1,6 @@
 # 常用 Agent 接口参考（自动生成）
 
-来源：AgentApi::tools()。不要手工修改参数表。重新生成：examples/onboarding/generate-reference.ps1 -Executable 实际程序。首次上手先读 MCP.md；此文件仅供查参。
+来源：node/src/mcp/tools.json。不要手工修改参数表。重新生成：examples/onboarding/generate-reference.ps1。首次上手先读 MCP.md；此文件仅供查参。
 
 ## list_windows
 
@@ -10,18 +10,22 @@ List all open windows. No parameters. Read the returned titles and pids to ident
 
 ## get_window_state
 
-Get controls and semantic profiles by default. mode:image skips UI Automation and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.
+Get compact controls and semantic profiles by default. change_mode:delta returns only changes since this connection's last complete observation of the same window and view; the first call or a reset returns full state. Unchanged screenshots are omitted, including inline images; small changes may return a positioned capture.kind:patch with a fullPath. Input coordinates still use the full image frame. detail:full restores complete control fields and longer text. mode:image skips UI Automation and profile discovery; mode:both includes controls/profiles and a screenshot. Screenshots return a local capture.path by default; image_delivery:inline also sends an MCP image. max_edge sets the screenshot's longest pixel edge (default 1600 for full windows; regions retain source size); it never enlarges the capture. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view. Restores focus unless activate:false.
 
 | 字段 | 必填 | 类型/取值 |
 |---|---|---|
+| change_mode | 否 | full, delta |
 | activate | 否 | boolean |
+| detail | 否 | compact, full |
+| image_delivery | 否 | path, inline |
+| max_edge | 否 | integer |
 | mode | 否 | controls, image, both |
 | region | 否 | object |
 | window_id | 是 | string |
 
 ## execute_semantic
 
-PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Native execution manages controls, colors, focus and waits. Stops on failure; inspect the result before retrying.
+PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Execution manages controls, colors, focus and waits. Stops on failure; inspect the result before retrying.
 
 | 字段 | 必填 | 类型/取值 |
 |---|---|---|
@@ -31,7 +35,7 @@ PREFERRED when get_window_state returns a matching profile. Execute 1..256 app a
 
 ## execute_batch
 
-Execute basic actions on the last observed window. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.
+Execute basic actions on the last observed window. A standalone prepare_window action explicitly adjusts its client area in dip96 and returns the measured result; inspect again before input. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.
 
 | 字段 | 必填 | 类型/取值 |
 |---|---|---|
@@ -83,6 +87,15 @@ Execute basic actions on the last observed window. control_id clicks prefer dire
 | from | 是 | object |
 | to | 是 | object |
 | type | 是 | drag |
+
+### prepare_window
+
+| 字段 | 必填 | 类型/取值 |
+|---|---|---|
+| client_size | 是 | object |
+| delay_ms | 否 | integer |
+| minimum_client_size | 否 | object |
+| type | 是 | prepare_window |
 
 ### move
 

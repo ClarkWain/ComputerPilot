@@ -11,7 +11,7 @@ Json run_app_semantic(const Json& request, const Json& profile, const SemanticCa
     const auto& args=request.at("args");
     const auto window=request.at("windowRef");
     const bool save=action=="document.saveAs";
-    if(profile.at("schemaVersion")!=1 || !args.is_object()) throw std::invalid_argument("Invalid semantic profile/args");
+    if((profile.at("schemaVersion")!=1 && profile.at("schemaVersion")!=2) || !args.is_object()) throw std::invalid_argument("Invalid semantic profile/args");
     for(auto it=args.begin();it!=args.end();++it)
         if(save ? (it.key()!="path" && it.key()!="format" && it.key()!="overwrite") : it.key()!="brush")
             throw std::invalid_argument("Unsupported action argument: "+it.key());

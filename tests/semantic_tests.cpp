@@ -49,7 +49,9 @@ int main(int argc, char** argv) {
         auto mock = [&](const std::string& op, const Json& args) -> Json {
             if (op == "system.session") return {{"lockState", "unlocked"}, {"inputDesktopAccessible", true}, {"lastInputTick", 42}};
             if (op == "window.get") return {{"pid", 1}, {"dpi", windowDpi}, {"foreground", true},
-                {"bounds", {{"x", 100}, {"y", 50}, {"width", 1505}, {"height", 1080}}}};
+                {"bounds", {{"x", 100}, {"y", 50}, {"width", 1700}, {"height", 1080}}},
+                {"client", {{"dip96", {{"width", 1700*96/windowDpi-15}, {"height", 700}}}}},
+                {"display", {{"dpi", windowDpi}}}};
             if (op == "ui.tree") {
                 Json elements = Json::array();
                 auto add = [&](Json selector) {
@@ -300,7 +302,7 @@ int main(int argc, char** argv) {
         auto reused=dp::run_semantic(stars,profile,evidenceMock,[](int){},&evidence);
         require(reused["status"]=="ok"&&mainTrees==0,"execution discovery tree was scanned again");
         const int beforeStale=draws;
-        for(auto field:{"windowRef","pid","dpi","bounds","className","executable","enabled","minimized","foreground"}) {
+        for(auto field:{"windowRef","pid","dpi","bounds","className","executable","enabled","minimized","foreground","client","display"}) {
             auto stale=evidence;stale.window[field]=nullptr;
             auto refused=dp::run_semantic(bare,profile,evidenceMock,[](int){},&stale);
             require(refused["status"]=="error"&&refused["message"]=="profile_evidence_stale"&&draws==beforeStale,"stale discovery fingerprint dispatched input");

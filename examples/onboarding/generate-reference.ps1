@@ -1,13 +1,24 @@
-param([Parameter(Mandatory=$true)][string]$Executable,[switch]$Check)
+param([string]$Executable,[switch]$Check)
 $ErrorActionPreference='Stop'
 $root=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$raw=(& $Executable agent-schema) -join "`n"
-if($LASTEXITCODE -ne 0){throw 'agent-schema failed'}
+$schemaPath=Join-Path $root 'node/src/mcp/tools.json'
+$raw=[IO.File]::ReadAllText($schemaPath,[Text.Encoding]::UTF8)
+if($Executable){
+    $legacyRaw=(& $Executable agent-schema) -join "`n"
+    if($LASTEXITCODE -ne 0){throw 'agent-schema failed'}
+    $legacyTools=$legacyRaw|ConvertFrom-Json
+    $currentTools=$raw|ConvertFrom-Json
+    foreach($tool in $legacyTools){$tool.description=''}
+    foreach($tool in $currentTools){$tool.description=''}
+    $legacy=($legacyTools|ConvertTo-Json -Depth 100 -Compress)
+    $current=($currentTools|ConvertTo-Json -Depth 100 -Compress)
+    if($legacy -cne $current){throw 'Legacy C++ schema differs from Node source'}
+}
 $tools=$raw|ConvertFrom-Json
 $lines=[Collections.Generic.List[string]]::new()
 $lines.Add('# 常用 Agent 接口参考（自动生成）')
 $lines.Add('')
-$lines.Add('来源：AgentApi::tools()。不要手工修改参数表。重新生成：examples/onboarding/generate-reference.ps1 -Executable 实际程序。首次上手先读 MCP.md；此文件仅供查参。')
+$lines.Add('来源：node/src/mcp/tools.json。不要手工修改参数表。重新生成：examples/onboarding/generate-reference.ps1。首次上手先读 MCP.md；此文件仅供查参。')
 $lines.Add('')
 function Add-Fields($Schema) {
     if (@($Schema.properties.PSObject.Properties).Count -eq 0) { $lines.Add('无参数；传空对象 {}。'); $lines.Add(''); return }
@@ -29,7 +40,8 @@ $actions=($tools|Where-Object name -eq 'execute_batch').inputSchema.properties.a
 foreach($a in $actions){$lines.Add("### $($a.properties.type.const)");$lines.Add('');Add-Fields $a}
 $lines.Add('point/from/to 均为 {x:整数,y:整数}，遵循最近观察的 coordinateSpace：有截图使用图片像素，仅 controls 使用窗口物理像素；程序自动转换，必须在观察范围内。click 的 point/control_id 必须二选一。count 为 1 或 2，actions 数量为 1..256。move.points 为 1..4096 个 [x,y] 整数对；hold 可选 left/right/middle，指定时至少两点：首点按下、连续移动、末点松开，省略则只移动。delay_ms 是动作前等待。完整机器可读定义见 agent-tools.schema.json；该文件由同一命令生成。')
 $doc=($lines -join "`n")+"`n"
-$outputs=@{'docs/AGENT-API.md'=$doc;'docs/agent-tools.schema.json'=$raw.TrimEnd()+"`n"}
+$schema=$raw.Replace("`r`n","`n").TrimEnd()+"`n"
+$outputs=@{'docs/AGENT-API.md'=$doc;'docs/agent-tools.schema.json'=$schema}
 foreach($name in $outputs.Keys){
     $path=Join-Path $root $name
     if($Check){if(-not (Test-Path -LiteralPath $path) -or ([IO.File]::ReadAllText($path).Replace("`r`n","`n")) -cne $outputs[$name]){throw "Generated reference is stale: $name"}}

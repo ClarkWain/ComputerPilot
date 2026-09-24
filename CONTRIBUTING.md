@@ -13,4 +13,4 @@ personal task records or build output. Keep third-party notices intact. Report
 results with their environment and avoid unsupported reliability claims.
 
 Contributions are provided under the applicable project license; retain upstream
-notices for adapted code. See docs/BUILDING.md for package and release validation.
+notices for adapted code. See docs/guides/BUILDING.md for package and release validation.

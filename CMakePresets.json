@@ -7,28 +7,41 @@
       "architecture": "x64",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
-        "CMAKE_PREFIX_PATH": "${sourceDir}/.deps/libtorch",
-        "DP_WITH_TORCH": "ON",
-        "DP_WITH_OCR": "ON",
-        "OpenCV_DIR": "${sourceDir}/.deps/opencv-build",
-        "DP_TEST_OCR": "${sourceDir}/models/ocr",
-        "DP_TEST_MODEL": "${sourceDir}/models/icon_detect_v3/model.pt",
+        "DP_BUILD_LEGACY": "OFF",
+        "DP_WITH_TORCH": "OFF",
+        "DP_WITH_OCR": "OFF",
         "BUILD_TESTING": "ON"
       }
     },
     {
-      "name": "core-only",
+      "name": "legacy-windows-release",
       "inherits": "windows-release",
+      "binaryDir": "${sourceDir}/build/legacy-release",
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "${sourceDir}/.deps/libtorch",
+        "DP_BUILD_LEGACY": "ON",
+        "DP_WITH_TORCH": "ON",
+        "DP_WITH_OCR": "ON",
+        "OpenCV_DIR": "${sourceDir}/.deps/opencv-build",
+        "DP_TEST_OCR": "${sourceDir}/models/ocr",
+        "DP_TEST_MODEL": "${sourceDir}/models/icon_detect_v3/model.pt"
+      }
+    },
+    {
+      "name": "core-only",
+      "inherits": "legacy-windows-release",
       "binaryDir": "${sourceDir}/build/core",
       "cacheVariables": { "DP_WITH_TORCH": "OFF", "DP_TEST_MODEL": "", "DP_WITH_OCR": "OFF", "DP_TEST_OCR": "" }
     }
   ],
   "buildPresets": [
     { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release" },
+    { "name": "legacy-windows-release", "configurePreset": "legacy-windows-release", "configuration": "Release" },
     { "name": "core-only", "configurePreset": "core-only", "configuration": "Release" }
   ],
   "testPresets": [
     { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "legacy-windows-release", "configurePreset": "legacy-windows-release", "configuration": "Release", "output": { "outputOnFailure": true } },
     { "name": "core-only", "configurePreset": "core-only", "configuration": "Release", "output": { "outputOnFailure": true } }
   ]
 }

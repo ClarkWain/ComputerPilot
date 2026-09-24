@@ -1,12 +1,13 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "clickSettleMs": 20,
   "popupPollMs": 20,
+  "polygonClickDelayMs": 50,
   "id": "mspaint-classic-zh-CN",
   "dpi": 96,
   "referenceToolSize": 20,
-  "minimumWindowWidth": 1100,
-  "recommendedWindow": {"width": 1200, "height": 900, "units": "dpi96", "maximize": false},
+  "minimumClientSize": {"width": 1085, "height": 650, "unit": "dip96"},
+  "preferredClientSize": {"width": 1185, "height": 893, "unit": "dip96"},
   "canvasInset": [
     3,
     5
@@ -41,13 +42,16 @@
       "role": "ListItem"
     },
     "fill": {
-      "name": "填充"
+      "name": "填充",
+      "role": "50031"
     },
     "outline": {
-      "name": "轮廓"
+      "name": "轮廓",
+      "role": "50031"
     },
     "width": {
-      "name": "粗细"
+      "name": "粗细",
+      "role": "50031"
     },
     "primary": {
       "name": "颜色 1",
@@ -72,6 +76,18 @@
     "brushMenu": {
       "name": "刷子",
       "role": "Button"
+    },
+    "brushMain": {
+      "name": "刷子",
+      "role": "50031"
+    },
+    "fileTab": {
+      "name": "“文件”选项卡",
+      "role": "Button"
+    },
+    "saveAs": {
+      "name": "另存为",
+      "role": "50026"
     }
   },
   "noFill": {
@@ -155,6 +171,7 @@
     }
   },
   "save": {
+    "dialogTitle": "保存为",
     "fileName": {
       "automationId": "1001",
       "role": "Edit"
@@ -163,6 +180,13 @@
       "automationId": "1",
       "role": "Button"
     }
+  },
+  "canvasSize": {
+    "dialogTitle": "映像属性",
+    "pixels": { "name": "像素(P)", "role": "50013" },
+    "width": { "name": "宽度(W):", "role": "Edit" },
+    "height": { "name": "高度(H):", "role": "Edit" },
+    "confirm": { "name": "确定", "role": "Button" }
   },
   "textEditor": {
     "automationId": "114",
@@ -431,6 +455,11 @@
           "brush": "watercolor"
         }
       }
+    },
+    {
+      "action": "document.setCanvasSize",
+      "description": "设置画布像素尺寸",
+      "example": { "action": "document.setCanvasSize", "args": { "width": 603, "height": 696 } }
     },
     {
       "action": "document.saveAs",

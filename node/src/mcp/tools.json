@@ -1,0 +1,495 @@
+[
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": true
+    },
+    "description": "List all open windows. No parameters. Read the returned titles and pids to identify the intended window_id; does not activate or resize.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "required": [],
+      "type": "object"
+    },
+    "name": "list_windows"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Get compact controls and semantic profiles by default. change_mode:delta returns only changes since this connection's last complete observation of the same window and view; the first call or a reset returns full state. Unchanged screenshots are omitted, including inline images; small changes may return a positioned capture.kind:patch with a fullPath. Input coordinates still use the full image frame. detail:full restores complete control fields and longer text. mode:image skips UI Automation and profile discovery; mode:both includes controls/profiles and a screenshot. Screenshots return a local capture.path by default; image_delivery:inline also sends an MCP image. max_edge sets the screenshot's longest pixel edge (default 1600 for full windows; regions retain source size); it never enlarges the capture. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view. Restores focus unless activate:false.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "change_mode": {
+          "default": "full",
+          "enum": [
+            "full",
+            "delta"
+          ],
+          "type": "string"
+        },
+        "activate": {
+          "default": true,
+          "type": "boolean"
+        },
+        "detail": {
+          "default": "compact",
+          "enum": [
+            "compact",
+            "full"
+          ],
+          "type": "string"
+        },
+        "image_delivery": {
+          "default": "path",
+          "enum": [
+            "path",
+            "inline"
+          ],
+          "type": "string"
+        },
+        "max_edge": {
+          "maximum": 32000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "mode": {
+          "default": "controls",
+          "enum": [
+            "controls",
+            "image",
+            "both"
+          ],
+          "type": "string"
+        },
+        "region": {
+          "additionalProperties": false,
+          "properties": {
+            "height": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "width": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "x": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "y": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "type": "object"
+        },
+        "window_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "window_id"
+      ],
+      "type": "object"
+    },
+    "name": "get_window_state"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Execution manages controls, colors, focus and waits. Stops on failure; inspect the result before retrying.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "args": {
+                "type": "object"
+              }
+            },
+            "required": [
+              "action",
+              "args"
+            ],
+            "type": "object"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "profile": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "window_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "window_id",
+        "actions"
+      ],
+      "type": "object"
+    },
+    "name": "execute_semantic"
+  },
+  {
+    "annotations": {
+      "destructiveHint": true,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "description": "Execute basic actions on the last observed window. A standalone prepare_window action explicitly adjusts its client area in dip96 and returns the measured result; inspect again before input. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "oneOf": [
+                  {
+                    "not": {
+                      "required": [
+                        "control_id"
+                      ]
+                    },
+                    "required": [
+                      "point"
+                    ]
+                  },
+                  {
+                    "not": {
+                      "required": [
+                        "point"
+                      ]
+                    },
+                    "required": [
+                      "control_id"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "control_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "count": {
+                    "maximum": 2,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "delay_ms": {
+                    "description": "Optional delay before this action; default 0",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "point": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "y": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "type": "object"
+                  },
+                  "type": {
+                    "const": "click"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "control_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "delay_ms": {
+                    "description": "Optional delay before this action; default 0",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "fill_text"
+                  }
+                },
+                "required": [
+                  "control_id",
+                  "text",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "delay_ms": {
+                    "description": "Optional delay before this action; default 0",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "type_text"
+                  }
+                },
+                "required": [
+                  "text",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "chord": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "delay_ms": {
+                    "description": "Optional delay before this action; default 0",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": {
+                    "const": "press_keys"
+                  }
+                },
+                "required": [
+                  "chord",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "delay_ms": {
+                    "description": "Optional delay before this action; default 0",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "from": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "y": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "type": "object"
+                  },
+                  "to": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "y": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "x",
+                      "y"
+                    ],
+                    "type": "object"
+                  },
+                  "type": {
+                    "const": "drag"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "client_size": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "height": {
+                        "maximum": 20000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "unit": {
+                        "const": "dip96"
+                      },
+                      "width": {
+                        "maximum": 20000,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "width",
+                      "height",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  "delay_ms": {
+                    "description": "Optional delay before this action; default 0",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "minimum_client_size": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "height": {
+                        "maximum": 20000,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "unit": {
+                        "const": "dip96"
+                      },
+                      "width": {
+                        "maximum": 20000,
+                        "minimum": 1,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "width",
+                      "height",
+                      "unit"
+                    ],
+                    "type": "object"
+                  },
+                  "type": {
+                    "const": "prepare_window"
+                  }
+                },
+                "required": [
+                  "client_size",
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "delay_ms": {
+                    "description": "Optional delay before this action; default 0",
+                    "maximum": 10000,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "hold": {
+                    "description": "Optional: press at first point, hold through the path, release at end. Omit to move without pressing.",
+                    "enum": [
+                      "left",
+                      "right",
+                      "middle"
+                    ],
+                    "type": "string"
+                  },
+                  "points": {
+                    "description": "Ordered [x,y] pairs in the latest state coordinateSpace; one continuous path.",
+                    "items": {
+                      "items": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "maxItems": 2,
+                      "minItems": 2,
+                      "type": "array"
+                    },
+                    "maxItems": 4096,
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "type": {
+                    "const": "move"
+                  }
+                },
+                "required": [
+                  "points",
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "window_id": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "window_id",
+        "actions"
+      ],
+      "type": "object"
+    },
+    "name": "execute_batch"
+  }
+]

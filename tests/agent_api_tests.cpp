@@ -7,13 +7,15 @@ int main(){
  try {
   AgentApi api;Json bounds={{"x",100},{"y",200},{"width",400},{"height",300}};
   Json control_id={{"elementRef","e1"},{"name","Title"},{"role","Edit"},{"value","old"},{"bounds",{{"x",120},{"y",230},{"width",100},{"height",20}}}};
-  bool multi=false,empty=false,fail=false,foreground=true,enabled=true,activationWorks=true,stealFocus=false;int activations=0;Json last;
+  bool multi=false,empty=false,fail=false,foreground=true,enabled=true,activationWorks=true,stealFocus=false;int activations=0,measuredDpi=144,clientHeight=400;Json last;
   Json frame={{"width",200},{"height",150},{"bounds",bounds},{"path","test.webp"},{"imageRef","image1"}};
-  int profileReads=0,treeReads=0,captures=0;bool inspectionFails=false,invalidated=false,profileFails=false,malformedTree=false;
+  int profileReads=0,treeReads=0,captures=0;bool inspectionFails=false,invalidated=false,profileFails=false,malformedTree=false;Json captureArgs;
   std::string resetOperation;
   auto dispatch=[&](const std::string& op,const Json& args)->Json{
    if(op==resetOperation)return {{"status","error"},{"referencesInvalidated",true},{"dispatch","unknown"},{"code","provider_timeout"}};
-   Json w={{"windowRef","w1"},{"pid",42},{"title","Example"},{"foreground",foreground},{"enabled",enabled},{"bounds",bounds}};
+   Json w={{"windowRef","w1"},{"pid",42},{"title","Example"},{"foreground",foreground},{"enabled",enabled},{"bounds",bounds},
+      {"dpi",measuredDpi},{"dpiAwareness","per_monitor"},{"client",{{"dip96",{{"width",600},{"height",clientHeight}}}}},
+      {"display",{{"dpi",measuredDpi},{"name","DISPLAY1"}}}};
    if(!enabled)w["blockingWindow"]={{"windowRef","dialog"},{"title","Confirm"},{"pid",42}};
    if(op=="semantic.profiles") {
     ++profileReads;
@@ -34,7 +36,7 @@ int main(){
     return {{"elements",Json::array({control_id})},{"truncated",false}};
    }
    if(op=="ui.get")return control_id;
-   if(op=="capture.window"){++captures;return frame;}
+   if(op=="capture.window"){++captures;captureArgs=args;return frame;}
    if(op=="window.activate"){++activations;foreground=activationWorks;return {{"status","ok"}};}
    ++writes;last=args;
    if(fail)return {{"status","error"},{"dispatch","unknown"}};
@@ -58,6 +60,13 @@ int main(){
   check(other.call("get_window_state",{{"window_id","w1"}},dispatch)["code"]=="unknown_window","window ids belong to one connection");
   auto observe=[&](){return api.call("get_window_state",{{"window_id","w1"},{"mode","controls"}},dispatch);};
     auto o=observe();check(o["controls"][0]["bounds"][0]==20&&o["controls"][0]["bounds"][1]==30&&o["controls"][0]["bounds"][2]==100&&o["controls"][0]["bounds"][3]==20,"window coordinate conversion");
+   control_id["enabled"]=true;control_id["offscreen"]=false;control_id["value"]=std::string(500,'v');
+   o=observe();check(!o["controls"][0].contains("enabled")&&!o["controls"][0].contains("offscreen")&&o["controls"][0]["value"].get<std::string>().size()<300,"compact control omits default flags and caps text");
+   o=api.call("get_window_state",{{"window_id","w1"},{"detail","full"}},dispatch);
+   check(o["controls"][0]["enabled"]==true&&o["controls"][0]["offscreen"]==false&&o["controls"][0]["value"].get<std::string>().size()==500,"full control detail remains available");
+   check(api.call("get_window_state",{{"window_id","w1"},{"mode","controls"},{"image_delivery","inline"}},dispatch)["code"]=="invalid_arguments","controls-only observation cannot request an inline image");
+   control_id["value"]="old";
+   observe();
   Json base={{"window_id","w1"}};
   auto act=[&](Json action){auto a=base;a["actions"]=Json::array({action});return api.call("execute_batch",a,dispatch);};
   check(act({{"type","click"},{"point",{{"x",400},{"y",5}}}})["code"]=="invalid_arguments"&&writes==0,"reject outside points before dispatch");
@@ -70,6 +79,11 @@ int main(){
   o=observe();bounds["x"]=101;
   check(act({{"type","press_keys"},{"chord","Enter"}})["completed"]==0&&writes==1,"reject changed geometry");
   bounds["x"]=100;o=observe();fail=true;
+  fail=false;clientHeight=399;
+  check(act({{"type","press_keys"},{"chord","Enter"}})["error"]["code"]=="geometry_changed","client-only layout change invalidates observation");
+  clientHeight=400;o=observe();measuredDpi=120;
+  check(act({{"type","press_keys"},{"chord","Enter"}})["error"]["code"]=="geometry_changed","DPI change invalidates observation");
+  measuredDpi=144;o=observe();fail=true;
   a=base;a["actions"]=Json::array({Json{{"type","press_keys"},{"chord","Enter"}},Json{{"type","press_keys"},{"chord","Tab"}}});
   auto r=api.call("execute_batch",a,dispatch);check(r["failedIndex"]==0&&r["dispatch"]=="unknown"&&writes==2,"partial/unknown stops without replay");
   fail=false;o=observe();
@@ -109,8 +123,22 @@ int main(){
   check(api.call("execute_batch",a,dispatch)["code"]=="invalid_arguments"&&writes==beforeInvalid,"invalid final path point prevents earlier batch input too");
 
   o=api.call("get_window_state",{{"window_id","w1"},{"mode","image"}},dispatch);
+   check(o["capture"]["delivery"]=="path","screenshot defaults to path delivery");
+   check(captureArgs["maxEdge"]==1600,"full screenshot retains 1600 default");
+   o=api.call("get_window_state",{{"window_id","w1"},{"mode","image"},{"max_edge",1920}},dispatch);
+   check(captureArgs["maxEdge"]==1920,"requested screenshot output size reaches capture");
+   o=api.call("get_window_state",{{"window_id","w1"},{"mode","image"},{"region",{{"x",0},{"y",0},{"width",100},{"height",100}}}},dispatch);
+   check(captureArgs["maxEdge"]==32000&&captureArgs["lossless"]==true,"region keeps source resolution by default");
+   o=api.call("get_window_state",{{"window_id","w1"},{"mode","image"},{"image_delivery","inline"}},dispatch);
+   check(o["capture"]["delivery"]=="inline","inline screenshot can be requested explicitly");
   r=act({{"type","click"},{"point",{{"x",100},{"y",50}}}});
   check(o["coordinateSpace"]=="image_pixels"&&last["x"]==201&&last["y"]==101,"thumbnail click maps to native window pixels");
+  observe();auto mixedPrepare=base;mixedPrepare["actions"]=Json::array({Json{{"type","prepare_window"},{"client_size",{{"width",1200},{"height",700},{"unit","dip96"}}}},Json{{"type","press_keys"},{"chord","Enter"}}});
+  check(api.call("execute_batch",mixedPrepare,dispatch)["code"]=="invalid_arguments","window preparation must not share a batch with stale coordinates");
+  auto prepared=act({{"type","prepare_window"},{"client_size",{{"width",1200},{"height",700},{"unit","dip96"}}},
+      {"minimum_client_size",{{"width",1100},{"height",600},{"unit","dip96"}}}});
+  check(prepared["status"]=="ok"&&last["width"]==1200&&last["minimumHeight"]==600,"explicit standalone window preparation dispatches logical client size");
+  check(act({{"type","press_keys"},{"chord","Enter"}})["code"]=="state_required","window preparation invalidates old observation");
   frame["bounds"]={{"x",150},{"y",260},{"width",100},{"height",100}};frame["width"]=100;frame["height"]=100;
   api.call("get_window_state",{{"window_id","w1"},{"mode","image"}},dispatch);
   r=act({{"type","move"},{"points",{{10,20},{30,40}}},{"hold","left"}});

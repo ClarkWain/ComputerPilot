@@ -38,9 +38,11 @@ try{
     Assert-True (@($listTool.inputSchema.properties.PSObject.Properties).Count -eq 0) 'list_windows exposed parameters'
     $listing=Send-Request @{jsonrpc='2.0';id=50;method='tools/call';params=@{name='list_windows';arguments=@{}}}
     Assert-True (-not $listing.result.isError -and $listing.result.structuredContent.status -eq 'ok' -and $null -ne $listing.result.structuredContent.windows) 'Window enumeration failed'
+    Assert-True (@($listing.result.content).Count -eq 0) 'Window list duplicated structured data in content'
     foreach($arguments in @(@{title='obsolete'},@{pid=1})) {
         $filtered=Send-Request @{jsonrpc='2.0';id=53;method='tools/call';params=@{name='list_windows';arguments=$arguments}}
         Assert-True ($filtered.result.isError -and $filtered.result.structuredContent.code -eq 'invalid_arguments') 'Window filters accepted'
+        Assert-True (@($filtered.result.content).Count -eq 0) 'Tool error duplicated structured data in content'
     }
     $invalid=Send-Request @{jsonrpc='2.0';id=51;method='tools/call';params=@{name='execute_semantic';arguments=@{window_id='missing';actions=@(@{action='drawing.drawCircle';args=@{}})}}}
     Assert-True ($invalid.result.isError -and $invalid.result.structuredContent.code -eq 'unknown_window') 'Semantic tool not routed or unknown window accepted'
