@@ -45,7 +45,7 @@ int integer(const Options& args,const std::wstring& key,int fallback,int min,int
     return int(v);
 }
 Json capabilities() {
-    return {{"name","DesktopPilot"},{"version","0.4.0"},{"transport","cli"},{"pythonRequired",false},
+    return {{"name","DesktopPilot"},{"version",DP_PROJECT_VERSION},{"transport","cli"},{"pythonRequired",false},
         {"operations",{{"image.decode",true},{"image.fixture",true},{"vision.detect",Detector::available()},
         {"vision.overlay",true},{"vision.ocr",Ocr::available()},{"vision.textAssociation",true},{"ui.fusion",true},{"desktop.capture",true},{"input.click",true},{"mcp",true}}}};
 }

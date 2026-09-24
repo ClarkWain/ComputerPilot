@@ -4,11 +4,11 @@ DesktopPilot 是供 AI Agent 使用的 Windows 桌面操作程序，使用 C++20
 
 核心能力是**应用语义操作**：例如 Agent 提交“画一个红色圆”，程序根据适合当前应用的 profile 完成选工具、设置填充、输入 RGB、绘制和提交。没有匹配 profile 时，仍可使用点击、文本输入、按键、拖动和连续鼠标路径。
 
-## v0.4.0 更新与升级
+## v0.5.0 更新与升级
 
-本版将 MCP 接口统一为下面四个工具，加入应用 profile、连续鼠标路径、批次内样式和控件复用、桌面环境检查、焦点恢复，以及限制尺寸的 WebP 截图。下载 [v0.4.0](https://github.com/ClarkWain/DesktopPilot/releases/tag/v0.4.0)，或按下方步骤从源码构建。
+本版保留四工具 MCP 接口，强化 UIA 超时与 profile 证据处理，新增现代中文版 Paint 适配和受限的 Aseprite 热键/点击 profile。下载 [v0.5.0](https://github.com/ClarkWain/DesktopPilot/releases/tag/v0.5.0)，或按下方步骤从源码构建。
 
-从 v0.3.0 升级时，需要按 [MCP 文档](docs/MCP.md) 修改旧工具调用，更新 skill，并重启 MCP 服务、刷新工具列表；旧工具名不保留兼容入口。经典中文版 Paint 是当前提供的绘图 profile，不能直接套用于任意 Paint 版本或其他软件。
+从 v0.4.0 升级时，MCP 工具名称保持不变；重启服务以使用新版程序和 profile。Aseprite 的固定坐标保存动作已移除；核心发行包不含 OCR，因此不会显示 OCR 菜单动作。
 
 动作执行完成不代表画面正确。逐图形像素抽样方案已撤销；Agent 在批次后查看截图验收。小尺寸原生多边形仍有已知问题，实验中的扫描线绘法尚未集成为自动语义后端。完整变更见 [CHANGELOG](CHANGELOG.md)，验证范围见 [验证记录](docs/OPTIMIZATION-VALIDATION.md)。
 
@@ -79,8 +79,8 @@ pwsh -NoProfile -File skills/desktoppilot/scripts/install.ps1 -Update
 - 单击 control_id 时优先调用控件的 Invoke 能力；不支持才使用前台指针。仍需前台输入的路径自动恢复焦点，但不承诺任意后台绘图。模态弹窗和持续遮挡返回具体阻塞，不盲目重放。
 - 内部 `app.launch` 对新建且唯一匹配 profile 的窗口应用 recommendedWindow 尺寸，并限制在工作区内；已有窗口观察时不自动调整。
 
-- 内置 profile 目前只有**经典简体中文 Paint**，支持图形、文字、刷子选择和 PNG 另存为；不是所有 Paint 版本通用。见 [profile 条件和参数](docs/SEMANTIC-PROFILES.md)。
-- Photoshop、Blender、Aseprite 等应用没有内置专用语义适配；可依据实际截图和控件使用基础操作。
+- **经典简体中文 Paint**支持图形、文字、刷子选择和 PNG 另存；**现代中文 Paint**仅适配已验证的 11.2605.81.0、120 DPI、100% 缩放条件，支持选笔、RGB/笔宽、连续路径和填充。两者都不代表兼容所有 Paint 版本。
+- **Aseprite v1.2.15 英文界面**在 120 DPI 下提供 stock 热键选工具/缩放与通用窗口点击；OCR 菜单动作仅在 OCR 构建并配置模型时开放。没有像素绘图或保存语义。其他应用使用基础操作。
 - 语义匹配不等于成品验收。绘图派发成功不保证像素级尺寸或美术质量，提交按钮点成功也不代表网站任务完成。
 - 核心版不含 AI 模型；视觉解析是可选构建能力，发行包不附带模型权重。
 - 对外 MCP 只有上述四个工具，旧工具名不保留别名。底层原生 JSONL 协议供开发调试使用，日常 Agent 无需学习。

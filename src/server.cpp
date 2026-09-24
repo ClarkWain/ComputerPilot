@@ -194,7 +194,7 @@ int serve(bool mcp) {
                     initialized = true;
                     result = {{"protocolVersion", "2025-06-18"},
                               {"capabilities", {{"tools", {{"listChanged", false}}}}},
-                              {"serverInfo", {{"name", "desktop-pilot"}, {"version", "0.4.0"}}},
+                              {"serverInfo", {{"name", "desktop-pilot"}, {"version", DP_PROJECT_VERSION}}},
                               {"instructions",
                                "DESKTOP PREREQUISITE: DesktopPilot must run in the SAME Windows session and input desktop as the target app, without restricted execution tokens. "
                                "If desktopPreflight.ready is false, stop UI actions and fix the launch context; never keep retrying clicks. "

@@ -1,5 +1,6 @@
 #include <desktop_pilot/profiles.hpp>
 #include <desktop_pilot/service.hpp>
+#include <desktop_pilot/ocr.hpp>
 #include <windows.h>
 #include <fstream>
 #include <algorithm>
@@ -62,6 +63,14 @@ Json load_profile(const std::filesystem::path& directory,const std::string& id) 
     if(!file)throw std::invalid_argument("Profile is not installed: "+id);
     auto p=Json::parse(file);
     if(p.at("id")!=id||p.at("schemaVersion")!=1||!p.at("actions").is_array())throw std::invalid_argument("Invalid profile manifest: "+id);
+    // Core builds do not contain OCR. Do not advertise Aseprite actions that
+    // require OCR when the backend is absent; hotkeys and window clicks remain usable.
+    if(p.value("adapter",std::string{})=="aseprite-vision" && !Ocr::available()) {
+        auto& actions=p["actions"];
+        actions.erase(std::remove_if(actions.begin(),actions.end(),[](const Json& action) {
+            return action.value("action",std::string{})=="aseprite.openMenu";
+        }),actions.end());
+    }
     return p;
 }
 Json discover_profiles(const std::filesystem::path& directory,const std::string& window,const SemanticCall& call,Json* inspection) {
@@ -91,7 +100,10 @@ Json discover_profiles(const std::filesystem::path& directory,const std::string&
             }
             if(!w.value("enabled",true))reasons.push_back("window_blocked");
             if(w.value("minimized",false))reasons.push_back("window_minimized");
-            if(reasons.empty()) {
+            const auto& requiredSelectors=match.at("requiredSelectors");
+            // Self-drawn applications such as Aseprite can have no useful
+            // UIA selectors. Do not make their profile depend on a UIA scan.
+            if(reasons.empty() && !requiredSelectors.empty()) {
                 if(tree.is_null()) {
                     try {
                         tree=call("ui.tree",{{"windowRef",window},{"format","locator"},{"depth",16},{"limit",400},{"nodeBudget",3000},{"queryTimeoutMs",5000},{"metrics",true}});
@@ -104,7 +116,7 @@ Json discover_profiles(const std::filesystem::path& directory,const std::string&
                     if(inspection)*inspection=tree;
                 }
                 if(!ui_inspection_complete(tree) && !shallow_match_evidence(tree))reasons.push_back("ui_inspection_incomplete");
-                else for(auto& key:match.at("requiredSelectors")) {
+                else for(auto& key:requiredSelectors) {
                     auto name=key.get<std::string>();auto selector=p.at("selectors").at(name);
                     size_t rawCount=0;
                     std::set<std::string> unique;

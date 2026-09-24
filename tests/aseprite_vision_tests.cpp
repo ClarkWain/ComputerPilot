@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
                 return {{"inputDesktopAccessible", !desktopBlocked},
                         {"lockState", desktopBlocked ? "locked" : "unlocked"}};
             if (op == "window.get")
-                return {{"dpi", wrongDpi ? 200 : 96},
+                return {{"dpi", wrongDpi ? 200 : 120},
                         {"bounds", {{"x", 100}, {"y", 50}, {"width", 1600}, {"height", 1000}}},
                         {"enabled", true},
                         {"minimized", minimized},
@@ -295,33 +295,20 @@ int main(int argc, char** argv) {
             auto r = dp::run_semantic(req, profile, mock, [](int) {});
             require(r.at("status") == "ok" && clicks == 1, "double right-click must dispatch");
         }
-        // --- 17. saveAsDefault dispatches openMenu + 2 clicks (menu item + OK).
+        // --- 17. Unsafe fixed-coordinate save is not part of the public adapter.
         {
-            clicks = 0; captures = ocrs = 0;
+            clicks = captures = ocrs = 0;
             Json req = {{"windowRef", "w1"},
                         {"action", "aseprite.saveAsDefault"},
                         {"args", Json::object()}};
-            auto r = dp::run_semantic(req, profile, mock, [](int) {});
-            require(r.at("status") == "ok",
-                    ("saveAsDefault must succeed: " + r.dump()).c_str());
-            // Composition: openMenu = 1 capture + 1 ocr + 1 click,
-            // then saveAsDefault adds 2 more clicks (Save As item + OK).
-            require(captures == 1 && ocrs == 1 && clicks == 3,
-                    "saveAsDefault must run capture->ocr->3 clicks");
-        }
-        // --- 18. saveAsDefault rejects extra arguments.
-        {
-            clicks = 0;
-            Json req = {{"windowRef", "w1"},
-                        {"action", "aseprite.saveAsDefault"},
-                        {"args", {{"filename", "foo.png"}}}};
             bool rejected = false;
             try {
                 dp::run_semantic(req, profile, mock, [](int) {});
             } catch (const std::invalid_argument&) {
                 rejected = true;
             }
-            require(rejected && clicks == 0, "saveAsDefault must reject unknown args");
+            require(rejected && clicks == 0 && captures == 0 && ocrs == 0,
+                    "saveAsDefault must be rejected without side effects");
         }
         std::cout << "aseprite-vision tests passed\n";
         return 0;

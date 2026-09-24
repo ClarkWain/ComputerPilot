@@ -1,15 +1,18 @@
 #include <desktop_pilot/profiles.hpp>
+#include <desktop_pilot/ocr.hpp>
 #include <fstream>
 #include <windows.h>
 #include <iostream>
 using namespace dp;
 int wmain(int argc,wchar_t** argv) {
-    if(argc!=2)return 2;
+    if(argc!=3)return 2;
     auto dir=std::filesystem::temp_directory_path()/(L"dp-profile-tests-"+std::to_wstring(GetCurrentProcessId()));
     int checks=0,dispatches=0,treeReads=0;
     try {
         std::filesystem::create_directories(dir/L"mspaint-classic-zh-CN");
         std::filesystem::copy_file(std::filesystem::path(argv[1]),dir/L"mspaint-classic-zh-CN/profile.json",std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::create_directories(dir/L"aseprite-vision-en");
+        std::filesystem::copy_file(std::filesystem::path(argv[2]),dir/L"aseprite-vision-en/profile.json",std::filesystem::copy_options::overwrite_existing);
         auto p=load_profile(dir,"mspaint-classic-zh-CN");
         Json window={{"windowRef","w"},{"executable","MSPAINT.EXE"},{"className","MSPaintApp"},{"dpi",96},{"bounds",{{"width",1300}}}};
         Json elements=Json::array();
@@ -94,6 +97,19 @@ int wmain(int argc,wchar_t** argv) {
         window["executable"]="other.exe";
         discover_profiles(dir,"w",throwingProvider,&inspection);
         check(inspection.is_null()&&throwingReads==2,"skipped inspection cannot expose previous query failure");
+        window["executable"]="aseprite.exe";window["className"]="Aseprite.Window";window["dpi"]=120;window["bounds"]["width"]=1600;
+        const int treeReadsBeforeAseprite=treeReads;
+        auto asepriteCatalog=discover();
+        check(asepriteCatalog["profiles"].size()==1&&asepriteCatalog["profiles"][0]["id"]=="aseprite-vision-en","Aseprite v1.2.15 profile matches its verified DPI and window class");
+        check(treeReads==treeReadsBeforeAseprite,"Aseprite profile does not depend on a UIA scan without selectors");
+        bool sawMenu=false,sawSave=false;
+        for(const auto& action:asepriteCatalog["profiles"][0]["actions"]) {
+            sawMenu|=action["action"]=="aseprite.openMenu";
+            sawSave|=action["action"]=="aseprite.saveAsDefault";
+        }
+        check(sawMenu==Ocr::available(),"OCR menu action is advertised only when OCR is built");
+        check(!sawSave,"Aseprite save action is not advertised");
+        window["dpi"]=96;check(discover()["profiles"].empty(),"Aseprite profile rejects unverified DPI");
         bool rejected=false;try{load_profile(dir,"../escape");}catch(...){rejected=true;}
         check(rejected,"profile id is not a path");
         std::filesystem::remove_all(dir);

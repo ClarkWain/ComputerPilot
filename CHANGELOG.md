@@ -1,9 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 — 2026-09-24
 
-- Allow 120 DPI for the classic Chinese Paint profile while retaining UI fingerprint checks. Add discovery, origin/diameter and continuous-path regression coverage; classic 120 DPI live rendering remains unverified.
-- Add a separate modern Chinese Paint adapter for the observed 11.2605.81.0 UI at 120 DPI and 100% zoom: brush selection, RGB readback, verified pixel width, continuous paths and bucket fill. Preserve classic behavior. Reject unsupported zoom, clipped canvas, incomplete controls and partial-action replay.
+- Improve UI Automation and worker failure handling: preserve screenshots when inspection fails, reject incomplete profile evidence, and invalidate stale references consistently.
+- Add a modern Chinese Paint profile for the observed 11.2605.81.0 UI at 120 DPI and 100% zoom. It supports brush selection, RGB and width readback, continuous paths, and bucket fill; unsupported layouts are rejected.
+- Extend the classic Chinese Paint profile to 120 DPI while retaining UI fingerprint checks. Classic Paint 120 DPI live rendering remains unverified.
+- Add an Aseprite v1.2.15 English profile at 120 DPI with stock tool/zoom hotkeys and generic clicks. OCR menu navigation is advertised only by OCR-enabled builds. Pixel drawing and save actions are not included.
+- Remove Aseprite's fixed-coordinate Save As action because it could confirm overwrites and report success without evidence.
+- Keep the four-tool MCP API unchanged. Default Core releases do not include OCR or model weights.
+
+Validation limits: modern Paint's verified range is limited to the documented version/layout; Aseprite support does not prove arbitrary hotkey customization or UI layouts. See `docs/RELIABILITY-VALIDATION.md` and `docs/PAINT-VERSION-ADAPTATION.md` for the recorded evidence and outstanding real-desktop checks.
 
 ## 0.4.0 — 2026-09-16
 

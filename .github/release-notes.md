@@ -1,17 +1,18 @@
-DesktopPilot v0.4.0：面向 Agent 的原生 Windows 桌面自动化与 MCP 服务。
+DesktopPilot v0.5.0：面向 Agent 的原生 Windows 桌面自动化与 MCP 服务。
 
 ## 主要变化
 
 - MCP 精简为四个工具：`list_windows`、`get_window_state`、`execute_semantic`、`execute_batch`。
-- 根据当前软件、DPI、布局和控件匹配应用 profile；附带经典中文版 Paint 绘图、文字、刷子和保存语义。
+- 根据当前软件、DPI、布局和控件匹配应用 profile；附带经典与受限现代中文版 Paint 语义，以及 Aseprite v1.2.15 的热键/点击适配。
+- 现代 Paint 仅适配记录的 11.2605.81.0、120 DPI、100% 缩放范围。Aseprite 的 OCR 菜单动作只在 OCR 可用的构建中显示；Core 包不含 OCR/模型，也不提供 Aseprite 保存或像素绘图动作。
 - 同批次复用样式与控件定位，支持紧凑连续鼠标路径。
 - 检查交互桌面，恢复目标窗口焦点，报告阻挡输入的模态窗口。
 - 截图最长边限制为 1600，支持局部截图、WebP、PNG 回退与坐标转换。
-- 更新 Skill、MCP 文档、入门示例和工具参考；17 项本地非交互回归通过。
+- 更新可靠性处理、Skill、profile 文档和回归覆盖。发布构建由 Windows CI 重新执行非交互测试与包检查。
 
 ## 升级
 
-这是不兼容的 MCP 工具命名调整。旧客户端须按 `docs/MCP.md` 迁移调用，更新 Skill，并重启服务、刷新工具列表；不保留旧别名。
+MCP 工具名称保持不变。升级后重启服务并刷新工具列表，以载入新的 profile 能力。
 
 解压 ZIP 后，将 MCP 客户端配置为运行 `bin/desktop-pilot.exe serve`，并让它与目标应用处于同一 Windows 用户会话和输入桌面。需要 Windows x64 和 Microsoft Visual C++ 2015–2022 x64 Runtime。运行不需要 Node 或 Python。
 

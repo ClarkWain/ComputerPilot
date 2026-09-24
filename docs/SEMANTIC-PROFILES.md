@@ -37,6 +37,8 @@
 
 `mspaint-modern-zh-CN` 使用独立 `paint-modern` 适配器，已实测新版 11.2605.81.0、120 DPI、100% 缩放。要求完整可见画布、展开工具栏（最小宽度 1500，且必须通过控件校验）。支持 `drawing.selectBrush`（brush/pencil）、`drawing.setColor`（RGB）、`drawing.setStrokeWidth`（1..24、26、28、30）、`drawing.drawPolyline`（points/closed/stroke）及 `drawing.fillAt`（position/color）。具体参数以返回示例为准。画布原点直接读取实际边界，100% 下坐标不再乘 DPI；笔宽通过 RangeValue 按分段索引写入 并回读像素文本。设置回读成功和动作派发仍需截图验收。原生形状、文字、保存、其他 DPI 和缩放尚未开放。不同版本依据见 [Paint 版本适配](PAINT-VERSION-ADAPTATION.md)。
 
+`aseprite-vision-en` 仅针对 Aseprite v1.2.15 英文界面、120 DPI。提供 stock 工具/缩放热键和调用方自行定位的窗口点击；热键动作只确认输入派发，不确认应用已切换工具或缩放。`aseprite.openMenu` 需要 OCR 后端与 PP-OCRv4 模型，默认 Core 构建会从返回的 actions 中省略该动作。当前不提供 Aseprite 像素绘图、文档保存或新建语义。
+
 状态为实验性：历史实测存在 1 像素栅格舍入误差，尚未完成所有动作的逐像素位置、尺寸、描边验收。语义派发成功不等于艺术质量或像素精度达标。
 
 ## 调用例子

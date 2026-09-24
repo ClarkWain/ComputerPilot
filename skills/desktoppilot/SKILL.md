@@ -7,7 +7,7 @@ description: 使用 DesktopPilot 操纵 Windows 桌面软件，读取控件和�
 
 这个 Skill 教 Agent 通过 DesktopPilot 操纵 Windows 电脑完成任务，例如在画图软件中绘画，在浏览器中搜索、填写表单，或操作 Photoshop、Blender 等软件的界面。Agent 负责理解目标、选择操作和验收结果；DesktopPilot 作为中间层执行实际操作。
 
-**用途与限制：** 有匹配 profile 的软件可以直接执行语义动作；其他软件使用基础键鼠操作。经典简体中文 Paint 支持原有绘图、文字和保存。新版中文 Paint 11.2605 已适配 120 DPI、100% 缩放、完整可见画布及展开工具栏，支持选笔、RGB、笔宽、连续路径和油漆桶填充；仅使用实际返回的 actions。不同版本、缩放、滚动与小图形误差都必须验收，不代表其他软件已有专用动作。
+**用途与限制：** 有匹配 profile 的软件可以直接执行语义动作；其他软件使用基础键鼠操作。经典简体中文 Paint 支持绘图、文字和保存。新版中文 Paint 11.2605 仅适配 120 DPI、100% 缩放、完整可见画布及展开工具栏，支持选笔、RGB、笔宽、连续路径和油漆桶填充；仅使用实际返回的 actions。Aseprite v1.2.15 英文界面在 120 DPI 下提供 stock 热键选工具/缩放和通用点击；OCR 菜单动作只在带 OCR 后端的构建中出现。没有 Aseprite 绘图或保存语义。不同版本、缩放、滚动与小图形误差都必须验收。
 
 新版绘制闭合花朵轮廓可直接调用 `drawing.drawPolyline`，提供画布坐标 `points`、`closed:true`、`stroke:{color:[r,g,b],width:7}`，再用 `drawing.fillAt` 的 `position:[x,y]` 和 `color:[r,g,b]` 填内部。一次 execute_semantic 可提交多个动作。无需 Agent 编写键鼠脚本，程序负责选笔、设色、笔宽与回读。fillAt 使用真实油漆桶，调用者应确保轮廓闭合。新版暂不支持原生形状、文字、保存、图层操作或其他缩放；不要从经典 profile 借用未列出的动作。用户要求不保存时保留文档打开。
 

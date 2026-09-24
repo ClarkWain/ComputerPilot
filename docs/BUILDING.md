@@ -54,7 +54,7 @@ cmake -DDP_BINARY_DIR=build/core/Release -DDP_PACKAGE_DIR=out/dist/DesktopPilot 
 - Release 工作流复用构建流程，只在发布 job 授予 contents:write。
 - CI 的非交互测试不等于真实应用验收；模型后端在安装依赖后本地或专用 Windows runner 验证。
 
-当前版本为 0.4.0。标签发布前同步 CMake、CLI capabilities、MCP serverInfo 的版本号，检查 CHANGELOG、第三方声明和仓库待提交内容。推送 `v0.4.0` 后等待 Release 工作流成功，确认 ZIP 与 SHA256SUMS.txt 已附加到该版本；仅推送标签不代表发布完成。
+当前版本为 0.5.0。版本字符串由 CMake project version 提供给 CLI capabilities 与 MCP serverInfo。发布前检查 CHANGELOG、第三方声明、干净候选提交和身份扫描。推送 `v0.5.0` 标签后等待 Release 工作流成功，确认 ZIP 与 SHA256SUMS.txt 已附加到该版本；仅推送标签不代表发布完成。
 ## 截图编码依赖
 
 默认开启 `DP_WITH_WEBP`，首次配置会下载并校验 libwebp 1.6.0 源码，静态链接编码器；发行包包含许可证。离线构建可预先放置 `.deps/downloads/libwebp-1.6.0.tar.gz`，或通过 `-DDP_WITH_WEBP=OFF` 使用 PNG。格式压缩减少传输字节；图像 token 的减少主要依靠限制分辨率、局部裁剪和减少截图次数，不能按文件大小直接推算。
