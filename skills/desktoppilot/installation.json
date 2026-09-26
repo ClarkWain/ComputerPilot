@@ -1,0 +1,9 @@
+{
+  "$comment": "Anchor for standalone skill installs. root/executable are resolved by SKILL.md's connection section. When the skill is used in the DesktopPilot source tree, root points at that tree so profiles/ and docs/ are found alongside the executable.",
+  "root": "..\\..",
+  "executable": "build\\core\\Release\\desktop-pilot.exe",
+  "fallbackExecutables": [
+    "bin\\desktop-pilot.exe",
+    "build\\core\\Release\\desktop-pilot.exe"
+  ]
+}

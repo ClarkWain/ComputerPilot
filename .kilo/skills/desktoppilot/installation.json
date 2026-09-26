@@ -1,0 +1,5 @@
+{
+  "root": "E:\\My_Project\\DesktopPilot",
+  "note": "Local installation hint, verify existence before use; no MCP or permission settings changed.",
+  "executable": "E:\\My_Project\\DesktopPilot\\build\\core\\Release\\desktop-pilot.exe"
+}

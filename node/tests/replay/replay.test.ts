@@ -156,6 +156,65 @@ test('resume continues only a committed prefix after rechecking a document basel
   } finally { await rm(base,{recursive:true,force:true}); }
 });
 
+test('concurrent resume rechecks the checkpoint after acquiring the desktop lock',async()=>{
+  const base=await mkdtemp(join(tmpdir(),'dp-replay-resume-race-'));
+  const run=join(base,'run');
+  const resumable:ReplayRecipe={...recipe,steps:[recipe.steps[0],
+    {...recipe.steps[1],before:{control:{name:'Document',value:'baseline'}}}]};
+  let lockHeld=false;
+  const lockWaiters:Array<()=>void>=[];
+  let signalQueued!:()=>void;
+  const queued=new Promise<void>(resolveQueued=>{signalQueued=resolveQueued;});
+  const acquireTestLock=async():Promise<()=>Promise<void>>=>{
+    if(lockHeld){signalQueued();await new Promise<void>(resolveWaiter=>lockWaiters.push(resolveWaiter));}
+    lockHeld=true;let released=false;
+    return async()=>{
+      if(released)return;released=true;
+      const next=lockWaiters.shift();if(next)next();else lockHeld=false;
+    };
+  };
+  const state=(value:string):JsonObject=>({status:'ok',title:'Paint',semantic:{profiles:[{id:'paint'}]},
+    controls:[{name:'Document',role:'Text',value}]});
+  let firstRunStateReads=0,initialDispatches=0;
+  const firstRunApi={async call(tool:string):Promise<JsonObject>{
+    if(tool==='list_windows')return {status:'ok',windows:[{window_id:'w1',title:'Paint'}]};
+    if(tool==='get_window_state')return state(++firstRunStateReads<3?'baseline':'other');
+    if(tool==='execute_semantic'){initialDispatches++;return {status:'ok',completed:1};}
+    throw new Error(tool);
+  }};
+  let started!:()=>void,releaseAction!:()=>void;
+  const actionStarted=new Promise<void>(resolveStarted=>{started=resolveStarted;});
+  const actionGate=new Promise<void>(resolveAction=>{releaseAction=resolveAction;});
+  let resumeDispatches=0;
+  const resumeApi={async call(tool:string):Promise<JsonObject>{
+    if(tool==='list_windows')return {status:'ok',windows:[{window_id:'w1',title:'Paint'}]};
+    if(tool==='get_window_state')return state('baseline');
+    if(tool==='execute_semantic'){
+      resumeDispatches++;
+      if(resumeDispatches===1){started();await actionGate;}
+      return {status:'ok',completed:1};
+    }
+    throw new Error(tool);
+  }};
+  try {
+    await assert.rejects(runReplay(firstRunApi,resumable,run,run,false,acquireTestLock),/precondition failed/);
+    assert.equal(initialDispatches,1);
+    assert.deepEqual(await inspectRun(run,resumable),{state:'resumable',committed:1,nextStep:'second',verification:'partial'});
+
+    const firstResume=runReplay(resumeApi,resumable,run,run,true,acquireTestLock);
+    await actionStarted;
+    const secondResume=runReplay(resumeApi,resumable,run,run,true,acquireTestLock).then(
+      ()=>'unexpected success',error=>error instanceof Error?error.message:String(error));
+    await queued;
+    releaseAction();
+    await firstResume;
+    const secondResult=await secondResume;
+    assert.match(secondResult,/Replay cannot resume/);
+    assert.equal(resumeDispatches,1);
+    assert.equal((await inspectRun(run,resumable)).state,'complete');
+  } finally { releaseAction();await rm(base,{recursive:true,force:true}); }
+});
+
 test('profile-only playback is reported as partial verification',async()=>{
   const base=await mkdtemp(join(tmpdir(),'dp-replay-partial-'));
   const run=join(base,'run');

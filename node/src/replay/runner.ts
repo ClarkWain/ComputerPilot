@@ -10,6 +10,7 @@ import { hasStrongResumeBaseline, inspectRun, recipeHash } from './recovery.js';
 import { checkCapture, waitForStableImage } from './visual.js';
 
 export type ReplayApi = { call(tool: string, args: JsonObject): Promise<JsonObject> };
+export type ReplayLockProvider = typeof acquireDesktopLock;
 const objects = (value: unknown): JsonObject[] => Array.isArray(value) ? value.filter(x => x && typeof x === 'object') as JsonObject[] : [];
 function expand(value: unknown, runDirectory: string, sourceDirectory: string): unknown {
   if (typeof value === 'string') return value.replaceAll('{{runDir}}', resolve(runDirectory))
@@ -22,25 +23,31 @@ function requireOk(result: JsonObject, stage: string): void {
   if (operationFailed(result) || result.status !== 'ok') throw new Error(`${stage}: ${JSON.stringify(result)}`);
 }
 export async function runReplay(api: ReplayApi, recipe: ReplayRecipe, runDirectory: string,
-  sourceDirectory = runDirectory, resume=false): Promise<{ verification: 'verified' | 'partial' }> {
+  sourceDirectory = runDirectory, resume=false,
+  acquireLock: ReplayLockProvider = acquireDesktopLock): Promise<{ verification: 'verified' | 'partial' }> {
   let startIndex=0,fullyVerified=true;
-  if (resume) {
-    const inspection=await inspectRun(runDirectory,recipe);
-    if (inspection.state!=='resumable')
-      throw new Error(`Replay cannot resume: ${inspection.reason??inspection.state}`);
-    startIndex=inspection.committed;
-    if (!hasStrongResumeBaseline(recipe,startIndex))
-      throw new Error(`Replay cannot resume ${inspection.nextStep}: a document-specific before condition is required`);
-    fullyVerified=inspection.verification==='verified';
-  } else await mkdir(runDirectory, { recursive: false });
-  const journal = await open(resolve(runDirectory, 'execution.jsonl'), resume?'a':'wx');
+  let journal: Awaited<ReturnType<typeof open>> | undefined;
   let release: (() => Promise<void>) | undefined;
   const event = async (entry: JsonObject): Promise<void> => {
+    if (!journal) throw new Error('Replay journal is not open');
     await journal.writeFile(JSON.stringify({ time: new Date().toISOString(), ...entry })+'\n');
     await journal.sync();
   };
   try {
-    release = await acquireDesktopLock();
+    release = await acquireLock();
+    // Resume inspection must happen while holding the desktop lock. Otherwise two
+    // resumptions can both inspect the same checkpoint and the second can replay
+    // an action after waiting for the first process to finish.
+    if (resume) {
+      const inspection=await inspectRun(runDirectory,recipe);
+      if (inspection.state!=='resumable')
+        throw new Error(`Replay cannot resume: ${inspection.reason??inspection.state}`);
+      startIndex=inspection.committed;
+      if (!hasStrongResumeBaseline(recipe,startIndex))
+        throw new Error(`Replay cannot resume ${inspection.nextStep}: a document-specific before condition is required`);
+      fullyVerified=inspection.verification==='verified';
+    } else await mkdir(runDirectory, { recursive: false });
+    journal = await open(resolve(runDirectory, 'execution.jsonl'), resume?'a':'wx');
     await event(resume?{kind:'resume',from:recipe.steps[startIndex].id}:
       { kind: 'start', recipe: recipe.name, recipeHash:recipeHash(recipe) });
     for (const step of recipe.steps.slice(startIndex)) {
@@ -99,7 +106,7 @@ export async function runReplay(api: ReplayApi, recipe: ReplayRecipe, runDirecto
     await event({ kind: 'finished', verification });
     return {verification};
   } catch (error) {
-    await event({ kind: 'stopped', reason: error instanceof Error ? error.message : String(error) });
+    if (journal) await event({ kind: 'stopped', reason: error instanceof Error ? error.message : String(error) });
     throw error;
-  } finally { await release?.();await journal.close(); }
+  } finally { await release?.();await journal?.close(); }
 }

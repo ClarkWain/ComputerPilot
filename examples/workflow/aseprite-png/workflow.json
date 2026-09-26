@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "name": "Export Aseprite single-frame sources as PNG",
+  "inputDirectory": "./input",
+  "outputDirectory": "artifacts",
+  "adapter": "aseprite-png",
+  "executable": "C:/Program Files/Aseprite/aseprite.exe",
+  "maxItems": 500,
+  "timeoutMs": 120000,
+  "onError": "continue",
+  "script": "./decide-item.mjs"
+}

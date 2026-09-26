@@ -7,7 +7,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 const root=fileURLToPath(new URL('../../../../',import.meta.url));
-const native=resolve(root,'build/core/Release/desktop-pilot-native.exe');
+const native=process.env.DP_NATIVE_EXE ?? resolve(root,'build/release/Release/desktop-pilot-native.exe');
 const entry=fileURLToPath(new URL('../../src/index.js',import.meta.url));
 
 test('real native hello and Node MCP list_windows return one structured result',

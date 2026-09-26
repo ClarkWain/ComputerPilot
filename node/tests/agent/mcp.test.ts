@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -13,6 +14,7 @@ test('2025-06-18 MCP negotiation advertises four tools without duplicate JSON co
     `import {serveStdio} from '@modelcontextprotocol/server/stdio';\n`+
     `await serveStdio(()=>createServer({call:async()=>({status:'ok',windows:[]})},{ready:true}));`;
   const child=spawn(process.execPath,['--input-type=module','-e',script],{stdio:['pipe','pipe','pipe'],windowsHide:true,
+    env:{...process.env,SESSIONNAME:`dp-mcp-test-${randomUUID()}`},
     cwd:fileURLToPath(new URL('../../../',import.meta.url))});
   const lines=createInterface({input:child.stdout});
   const buffered:unknown[]=[];const waiters:Array<(value:any)=>void>=[];
@@ -44,7 +46,10 @@ test('unchanged delta does not attach an inline MCP image',async()=>{
     `let count=0;await serveStdio(()=>createServer({call:async()=>++count===1?`+
     `{status:'ok',window_id:'w',change:{kind:'full'},capture:{delivery:'inline',path:${JSON.stringify(file)},imageRef:'img'}}:`+
     `{status:'ok',window_id:'w',change:{kind:'unchanged'}}}));`;
+  // This fake AgentApi never touches the desktop. Isolate its lock namespace
+  // from parallel Replay tests that independently exercise input locking.
   const child=spawn(process.execPath,['--input-type=module','-e',script],{stdio:['pipe','pipe','pipe'],windowsHide:true,
+    env:{...process.env,SESSIONNAME:`dp-mcp-test-${randomUUID()}`},
     cwd:fileURLToPath(new URL('../../../',import.meta.url))});
   const lines=createInterface({input:child.stdout});
   const buffered:any[]=[];const waiters:Array<(value:any)=>void>=[];
@@ -58,7 +63,8 @@ test('unchanged delta does not attach an inline MCP image',async()=>{
     send(1,'initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'test',version:'1'}});
     await receive();child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
     send(2,'tools/call',{name:'get_window_state',arguments:{window_id:'w',mode:'image',change_mode:'delta',image_delivery:'inline'}});
-    const first=await receive();assert.equal(first.result.content.length,1);assert.equal(first.result.content[0].type,'image');
+    const first=await receive();assert.equal(first.result.structuredContent.status,'ok',JSON.stringify(first));
+    assert.equal(first.result.content.length,1);assert.equal(first.result.content[0].type,'image');
     send(3,'tools/call',{name:'get_window_state',arguments:{window_id:'w',mode:'image',change_mode:'delta',image_delivery:'inline'}});
     const second=await receive();assert.deepEqual(second.result.content,[]);
     assert.equal(second.result.structuredContent.change.kind,'unchanged');

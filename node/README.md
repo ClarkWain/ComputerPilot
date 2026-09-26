@@ -4,6 +4,13 @@ The Node entry exposes the four public MCP tools over stdio. It starts a private
 
 The first Replay CLI is documented in [docs/guides/REPLAY.md](../docs/guides/REPLAY.md). It validates and exports `.dpreplay` files without desktop input, drafts recipes from opt-in semantic recordings, and plays fixed semantic steps when the target desktop is available.
 
+The file-batch Workflow preview is documented in [docs/guides/WORKFLOW.md](../docs/guides/WORKFLOW.md).
+After building, run `node node/dist/src/workflow/cli.js plan <workflow.json>` from the repository root to preview the input snapshot. `run` creates its own fresh frozen plan; it does not consume the printed preview.
+The initial adapter exports single-frame Aseprite files through its background CLI. Runs keep item results,
+verification evidence, isolated candidate outputs, and a durable journal; uncertain items require reconciliation.
+Optional trusted JavaScript makes item-level export/skip decisions. This preview does not promise arbitrary
+JavaScript continuation recovery or general GUI workflow support, and adds no public MCP tools.
+
 `get_window_state` supports opt-in `change_mode:"delta"`. The first observation returns full state; subsequent calls for the same window and view return changed controls, semantic data and screenshots only. An unchanged image does not produce an inline MCP image. Small visual changes return a positioned image patch and a full-size path for optional inspection; large changes return the full image. Input coordinates remain relative to the full observation frame. The server owns the baseline, so callers do not send a state ID. The default remains `change_mode:"full"` for existing clients.
 
 ## Development
