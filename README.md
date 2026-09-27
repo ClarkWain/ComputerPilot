@@ -40,6 +40,7 @@ node node/dist/src/index.js
 新入口会启动同一用户会话中的 `desktop-pilot-native.exe`。旧 C++ 服务及其回归测试可使用 `core-only` CMake preset 显式构建；新平台构建默认不包含 C++ MCP、profile 或模型业务代码。
 
 固定语义流程的 Replay CLI 已可校验、导出和播放 `.dpreplay`；当前能力与远程桌面验证边界见 [Replay 说明](docs/guides/REPLAY.md)。
+通用编排开发版支持可信 JS 的动态项目、跨窗口桌面命令与命令历史恢复；使用方法和真实 GUI 验证边界见 [通用编排说明](docs/guides/ORCHESTRATION.md)。
 
 **DesktopPilot 必须与目标软件在同一个 Windows 用户会话和输入桌面中运行。** 隔离桌面、锁屏或受限令牌可能使输入不可用。服务会返回原因和修复提示；同名桌面或截图成功不能证明输入可用。
 

@@ -49,7 +49,7 @@ function validateReference(raw:unknown,label:string):void {
     raw.maxChangedPercent<0 || raw.maxChangedPercent>100)
     throw new Error(`${label}.maxChangedPercent must be 0..100`);
 }
-function validateCondition(raw: unknown, label: string, required: boolean): void {
+export function validateCondition(raw: unknown, label: string, required: boolean): void {
   if (!record(raw)) throw new Error(`${label} must be an object`);
   keys(raw,['profileAvailable','titleContains','control','file','fileAbsent','capture']);
   if (required && !Object.keys(raw).length) throw new Error(`${label} needs an observable condition`);

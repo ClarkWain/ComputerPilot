@@ -11,6 +11,10 @@ verification evidence, isolated candidate outputs, and a durable journal; uncert
 Optional trusted JavaScript makes item-level export/skip decisions. This preview does not promise arbitrary
 JavaScript continuation recovery or general GUI workflow support, and adds no public MCP tools.
 
+The separate [general orchestration development CLI](../docs/guides/ORCHESTRATION.md) runs trusted async
+JavaScript with durable host commands, cross-window semantic/basic actions, questions and recovery.
+Its cross-application path has simulated integration coverage; real GUI business acceptance remains open.
+
 `get_window_state` supports opt-in `change_mode:"delta"`. The first observation returns full state; subsequent calls for the same window and view return changed controls, semantic data and screenshots only. An unchanged image does not produce an inline MCP image. Small visual changes return a positioned image patch and a full-size path for optional inspection; large changes return the full image. Input coordinates remain relative to the full observation frame. The server owns the baseline, so callers do not send a state ID. The default remains `change_mode:"full"` for existing clients.
 
 ## Development
@@ -33,7 +37,7 @@ Create a complete Windows x64 validation bundle from the repository root:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-node.ps1
 ```
 
-The script uses a fixed Node.js 22.15.0 archive, verifies its official SHA-256, installs dependencies from `node/package-lock.json`, compiles TypeScript, and installs only production dependencies into a fresh bundle. It requires the native worker, its WebP notices, both verified PP-OCRv4 models, and the converted OmniParser ONNX plus provenance manifest. Missing or mismatched inputs fail packaging; the bundle is never published partially. The default source paths can be changed with `-NativeExe`, `-WebpLicenseDir`, `-DetectorOnnx`, `-NodeArchive`, and `-OutputDir`. A pre-existing output directory is rejected. The script then runs `smoke.mjs` with the bundled Node binary, checks every bundled file's hash, loads both model families, negotiates the four MCP tools, and calls read-only `list_windows` from outside the source checkout.
+The script uses a fixed Node.js 22.15.0 archive, verifies its official SHA-256, installs dependencies from `node/package-lock.json`, compiles TypeScript, and installs only production dependencies into a fresh bundle. It requires the native worker, its WebP notices, both verified PP-OCRv4 models, and the converted OmniParser ONNX plus provenance manifest. Missing or mismatched inputs fail packaging; the bundle is never published partially. The default source paths can be changed with `-NativeExe`, `-WebpLicenseDir`, `-DetectorOnnx`, `-NodeArchive`, and `-OutputDir`. A pre-existing output directory is rejected. The script then runs `smoke.mjs` with the bundled Node binary, checks every bundled file's hash, loads both model families, negotiates the four MCP tools, calls read-only `list_windows`, and completes a no-desktop orchestration run and resume from outside the source checkout.
 
 The distribution layout is:
 
@@ -42,7 +46,9 @@ app/
   runtime/node.exe
   desktop-pilot-mcp.cmd
   desktop-pilot-replay.cmd
+  desktop-pilot-orchestration.cmd
   REPLAY.md
+  ORCHESTRATION.md
   node/dist/src/index.js
   node/node_modules/
   native/desktop-pilot-native.exe

@@ -91,8 +91,23 @@ try {
     await execFileAsync(runtime,[cli,'validate',scratch],{env});
     await execFileAsync(runtime,[cli,'export',scratch,archive],{env});
     await execFileAsync(runtime,[cli,'validate',archive],{env});
+    const orchestration=resolve(bundle,'node/dist/src/orchestration/cli.js');
+    const script=join(scratch,'workflow.mjs');
+    const definition=join(scratch,'orchestration.json');
+    await writeFile(script,'export default async function run(ctx) { await ctx.checkpoint("ready"); }\n');
+    await writeFile(definition,JSON.stringify({schemaVersion:1,name:'portable-orchestration',
+      script:'workflow.mjs',input:{}}));
+    const check=await execFileAsync(runtime,[orchestration,'validate',definition],{env});
+    assert.equal(JSON.parse(check.stdout).ok,true);
+    const runDir=join(scratch,'run');
+    const started=await execFileAsync(runtime,[orchestration,'run',definition,
+      '--trusted-script',script,'--run-dir',runDir],{env});
+    assert.equal(JSON.parse(started.stdout).status,'completed');
+    const resumed=await execFileAsync(runtime,[orchestration,'resume',runDir,
+      '--trusted-script',script],{env});
+    assert.equal(JSON.parse(resumed.stdout).status,'completed');
   } finally { await rm(scratch,{recursive:true,force:true}); }
-  console.log(`Portable bundle smoke passed: ${manifest.files.length} verified files, OCR and detector loaded, four MCP tools, read-only window listing, Replay validate/export/import`);
+  console.log(`Portable bundle smoke passed: ${manifest.files.length} verified files, OCR and detector loaded, four MCP tools, read-only window listing, Replay validate/export/import, orchestration run/resume`);
 } finally {
   child.kill();
 }

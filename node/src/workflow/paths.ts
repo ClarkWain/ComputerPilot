@@ -133,6 +133,19 @@ export async function ensureDirectoryNoLinks(path: string): Promise<void> {
   if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Directory is not a real directory: ${absolute}`);
 }
 
+export async function assertExistingDirectoryNoLinks(path: string): Promise<void> {
+  const absolute = resolve(path);
+  const parts: string[] = [];
+  let cursor = absolute;
+  const root = parse(absolute).root;
+  while (cursor !== root) { parts.push(cursor); cursor = dirname(cursor); }
+  for (const component of parts.reverse()) {
+    const info = await lstat(component);
+    if (info.isSymbolicLink() || !info.isDirectory())
+      throw new Error(`Directory path contains a link or non-directory: ${component}`);
+  }
+}
+
 export async function assertOutputOutsideInput(inputDirectory: string, runDirectory: string): Promise<void> {
   const input = await realpath(inputDirectory);
   const run = resolve(runDirectory);

@@ -155,11 +155,14 @@ try {
     Copy-Item -LiteralPath $ortNotices -Destination (Join-Path $stage 'licenses/onnxruntime-1.30.0/ThirdPartyNotices.txt')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'node/README.md') -Destination (Join-Path $stage 'README.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/guides/REPLAY.md') -Destination (Join-Path $stage 'REPLAY.md')
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'docs/guides/ORCHESTRATION.md') -Destination (Join-Path $stage 'ORCHESTRATION.md')
     Copy-Item -LiteralPath (Join-Path $repoRoot 'scripts/smoke-node-bundle.mjs') -Destination (Join-Path $stage 'smoke.mjs')
     [IO.File]::WriteAllText((Join-Path $stage 'desktop-pilot-mcp.cmd'),
         "@echo off`r`n`"%~dp0runtime\node.exe`" `"%~dp0node\dist\src\index.js`"`r`n")
     [IO.File]::WriteAllText((Join-Path $stage 'desktop-pilot-replay.cmd'),
         "@echo off`r`n`"%~dp0runtime\node.exe`" `"%~dp0node\dist\src\replay\cli.js`" %*`r`n")
+    [IO.File]::WriteAllText((Join-Path $stage 'desktop-pilot-orchestration.cmd'),
+        "@echo off`r`n`"%~dp0runtime\node.exe`" `"%~dp0node\dist\src\orchestration\cli.js`" %*`r`n")
     $mcpExample = @{ mcpServers = @{ 'desktop-pilot' = @{
         command = 'C:/tools/DesktopPilot-Node/runtime/node.exe';
         args = @('C:/tools/DesktopPilot-Node/node/dist/src/index.js')

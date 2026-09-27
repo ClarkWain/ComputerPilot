@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "Review selected items",
+  "script": "./workflow.mjs",
+  "input": {
+    "items": [
+      { "id": "asset-a", "needsReview": false },
+      { "id": "asset-b", "needsReview": true }
+    ]
+  }
+}

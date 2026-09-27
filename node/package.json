@@ -19,7 +19,8 @@
     "test": "npm run build && node --test dist/tests/**/*.test.js",
     "start": "node dist/src/index.js",
     "replay": "node dist/src/replay/cli.js",
-    "workflow": "node dist/src/workflow/cli.js"
+    "workflow": "node dist/src/workflow/cli.js",
+    "orchestration": "node dist/src/orchestration/cli.js"
   },
   "engines": {
     "node": ">=22"
