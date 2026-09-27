@@ -392,11 +392,23 @@ export async function resumeWorkflow(adapter:WorkflowAdapter,runDirectory:string
 export async function reconcileWorkflow(runDirectory:string,itemId:string,request:WorkflowReconcileRequest,
   adapter:WorkflowAdapter):Promise<WorkflowReport> {
   if(!request.reason?.trim())throw new Error('Reconciliation requires a nonempty reason');
+  if(request.action!=='accept'&&request.action!=='skip')throw new Error('Reconciliation action must be accept or skip');
   if(request.action==='skip'&&request.acknowledged!==true)throw new Error('Skipping an uncertain item requires explicit acknowledged:true');
   const run=resolve(runDirectory);const release=await acquireRunLock(run);let journal:WorkflowJournal|undefined;
   try {
-    await preserveAndTruncateIncompleteTail(run);
-    const recovered=await loadRecoveredRun(run);
+    // Inspect the complete prefix before changing a damaged journal. An invalid
+    // item id or an already completed item must leave the original bytes intact.
+    const inspected=await loadRecoveredRun(run,{allowIncompleteTail:true});
+    validateAdapter(adapter,inspected.plan);
+    const inspectedItem=inspected.plan.items.find(item=>item.id===itemId);
+    if(!inspectedItem)throw new Error(`Unknown workflow item: ${itemId}`);
+    const inspectedState=inspected.items.get(itemId)!;
+    if(!['needs_reconciliation','failed','conflict','unsupported','skipped'].includes(inspectedState.status))
+      throw new Error(`Item cannot be reconciled from ${inspectedState.status}`);
+    if(request.action==='accept'&&(!inspectedState.hasIntent||!inspectedState.probeExpected))
+      throw new Error('Cannot accept an output without a durable export intent and expected artifact contract');
+    if(inspected.incompleteTail) await preserveAndTruncateIncompleteTail(run);
+    const recovered=inspected.incompleteTail?await loadRecoveredRun(run):inspected;
     validateAdapter(adapter,recovered.plan);
     const planItem=recovered.plan.items.find(item=>item.id===itemId);
     if(!planItem)throw new Error(`Unknown workflow item: ${itemId}`);

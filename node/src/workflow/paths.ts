@@ -138,7 +138,8 @@ export async function assertOutputOutsideInput(inputDirectory: string, runDirect
   const run = resolve(runDirectory);
   const lexicalParent=resolve(dirname(run));
   const parent = await realpath(lexicalParent);
-  if (pathKey(parent)!==pathKey(lexicalParent)) throw new Error('runDirectory parent path must not contain a symlink or junction');
+  // A Windows 8.3 path can resolve to a different spelling without crossing a
+  // junction. ensureDirectoryNoLinks already checks each parent with lstat.
   const candidate = resolve(parent, basename(run));
   if (isWithin(input, candidate) || isWithin(candidate, input))
     throw new Error('runDirectory must be separate from inputDirectory');

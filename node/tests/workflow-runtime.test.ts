@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { appendFile, mkdtemp, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -42,6 +42,37 @@ test('unknown export cannot accept an unrelated file at the final artifact path'
     await writeFile(join(f.run,'artifacts','one.png'),'unrelated same-shape file');
     await assert.rejects(reconcileWorkflow(f.run,item.itemId,{action:'accept',reason:'inspect output'},adapter([])),
       /candidate|intent|match|artifact/i);
+  } finally {await f.cleanup();}
+});
+
+test('invalid reconciliation leaves an incomplete journal untouched',async()=>{
+  const f=await fixture();
+  try {
+    const a=adapter([]);
+    const completed=await startWorkflow(f.config,a,f.run);
+    const journalPath=join(f.run,'execution.jsonl');
+    await appendFile(journalPath,'{"seq":');
+    const before=await readFile(journalPath);
+    await assert.rejects(reconcileWorkflow(f.run,completed.items[0].itemId,
+      {action:'skip',reason:'wrong item',acknowledged:true},a),/cannot be reconciled/i);
+    assert.deepEqual(await readFile(journalPath),before);
+    assert.equal((await readdir(f.run)).some(name=>name.startsWith('journal-incomplete-')),false);
+  } finally {await f.cleanup();}
+});
+
+test('explicit reconciliation preserves an incomplete tail before skipping an uncertain item',async()=>{
+  const f=await fixture();
+  try {
+    const unknown:WorkflowAdapter={...adapter([]),async execute(){return {status:'unknown',dispatch:'possibly_partial',code:'lost',message:'producer exited unexpectedly'};}};
+    const result=await startWorkflow(f.config,unknown,f.run);
+    const journalPath=join(f.run,'execution.jsonl');
+    await appendFile(journalPath,'{"seq":');
+    const report=await reconcileWorkflow(f.run,result.items[0].itemId,
+      {action:'skip',reason:'inspected and deferred',acknowledged:true},adapter([]));
+    assert.equal(report.items[0].status,'skipped');
+    const backup=(await readdir(f.run)).find(name=>name.startsWith('journal-incomplete-'));
+    assert.ok(backup);
+    assert.equal((await readFile(join(f.run,backup),'utf8')),'{"seq":');
   } finally {await f.cleanup();}
 });
 
