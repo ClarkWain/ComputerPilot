@@ -41,6 +41,7 @@ node node/dist/src/index.js
 
 固定语义流程的 Replay CLI 已可校验、导出和播放 `.dpreplay`；当前能力与远程桌面验证边界见 [Replay 说明](docs/guides/REPLAY.md)。
 通用编排开发版支持可信 JS 的动态项目、跨窗口桌面命令与命令历史恢复；使用方法和真实 GUI 验证边界见 [通用编排说明](docs/guides/ORCHESTRATION.md)。
+Suno 音乐创作编排器接受歌名、歌词和风格，使用独立浏览器资料目录并记录提交及生成状态；使用方法见 [Suno 编排说明](docs/guides/SUNO-ORCHESTRATION.md)。
 
 **DesktopPilot 必须与目标软件在同一个 Windows 用户会话和输入桌面中运行。** 隔离桌面、锁屏或受限令牌可能使输入不可用。服务会返回原因和修复提示；同名桌面或截图成功不能证明输入可用。
 

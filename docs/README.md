@@ -10,6 +10,7 @@
 - [构建与发布](guides/BUILDING.md)、[Replay](guides/REPLAY.md)、[Paint 版本适配](guides/PAINT-VERSION-ADAPTATION.md)
 - [Workflow 文件批次编排](guides/WORKFLOW.md)：首次运行、动态规则、状态、暂停和异常恢复
 - [通用编排开发版](guides/ORCHESTRATION.md)：可信 JS 动态命令、跨窗口动作、历史恢复与核对
+- [Suno 音乐创作编排器](guides/SUNO-ORCHESTRATION.md)：三项歌曲输入、提交与异常恢复
 
 ## 设计与迁移
 

@@ -15,6 +15,7 @@ export type AuthorContext = {
   waitFor(id: string, args: WaitArgs): Promise<unknown>;
   ask(id: string, args: AskArgs): Promise<string>;
   checkpoint(id: string, value?: unknown): Promise<void>;
+  suno(id: string, args: unknown): Promise<unknown>;
   item<T>(key: string, body: (ctx: AuthorContext) => Promise<T>): Promise<T>;
   withDesktop<T>(key: string, body: (ctx: AuthorContext) => Promise<T>): Promise<T>;
 };
@@ -71,6 +72,7 @@ async function runWorker(): Promise<void> {
       waitFor: (id, args) => command('waitFor', id, args),
       ask: (id, args) => command('ask', id, args) as Promise<string>,
       checkpoint: async (id, value) => { await command('checkpoint', id, value); },
+      suno: (id, args) => command('suno', id, args),
       item: async (key, body) => body(context(`${scope}/item:${named(key)}`)),
       withDesktop: async (key, body) => {
         if (scope.includes('/desktop:')) throw new Error('withDesktop segments cannot be nested');

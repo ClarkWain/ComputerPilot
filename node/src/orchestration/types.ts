@@ -13,7 +13,7 @@ export type StepArgs = { target: Target; before: ReplayCondition; expect: Replay
   { mode: 'batch'; actions: BatchAction[] });
 export type WaitArgs = { target: Target; expect: ReplayCondition; timeoutMs: number };
 export type AskArgs = { question: string; choices: string[] };
-export type CommandKind = 'readInput' | 'observe' | 'step' | 'waitFor' | 'ask' | 'checkpoint';
+export type CommandKind = 'readInput' | 'observe' | 'step' | 'waitFor' | 'ask' | 'checkpoint' | 'suno';
 export type CommandRequest = { kind: CommandKind; id: string; scope: string; args: unknown };
 export type CommandResult = unknown;
 export type OrchestrationDefinition = { schemaVersion: 1; name: string; script: string;
@@ -23,7 +23,7 @@ export type OrchestrationStatus = 'running' | 'paused' | 'cancelled' | 'complete
   'waiting_decision' | 'needs_reconciliation' | 'failed';
 export type OrchestrationReport = { schemaVersion: 1; name: string; status: OrchestrationStatus;
   commandCount: number; committedCount: number; pending?: { key: string; kind: CommandKind; args: unknown };
-  message?: string; runDirectory: string };
+  message?: string; result?: unknown; runDirectory: string };
 export type OrchestrationHost = {
   execute(request: CommandRequest): Promise<CommandResult>;
   releaseDesktop?(): Promise<void>;

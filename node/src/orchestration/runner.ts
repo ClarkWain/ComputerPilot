@@ -15,7 +15,7 @@ import type { AskArgs, CommandKind, CommandRequest, OrchestrationDefinition, Orc
 
 const maxCommands = 10_000;
 const maxRunMs = 30 * 60_000;
-const keys = new Set<CommandKind>(['readInput','observe','step','waitFor','ask','checkpoint']);
+const keys = new Set<CommandKind>(['readInput','observe','step','waitFor','ask','checkpoint','suno']);
 const object = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 const commandKey = (request: CommandRequest): string => `${request.scope}/${request.id}`;
@@ -23,8 +23,14 @@ const normalized = (request: CommandRequest): CommandRequest =>
   ({ kind: request.kind, scope: request.scope, id: request.id, args: request.args ?? null });
 
 type History = { committed: Array<{ request: CommandRequest; value: unknown }>;
-  pending?: { request: CommandRequest; message?: string }; finished: boolean; failed?: string;
+  pending?: { request: CommandRequest; message?: string }; finished: boolean; result?: unknown; failed?: string;
   readRetries: Map<string,number>; paused: boolean; cancelled: boolean };
+
+function safelyRetryable(request: CommandRequest): boolean {
+  return ['readInput','observe','checkpoint'].includes(request.kind) ||
+    (request.kind === 'suno' && object(request.args) &&
+      ['inspect','prepare','wait'].includes(String(request.args.op)));
+}
 
 function inspectEvents(definition: OrchestrationDefinition, events: WorkflowEvent[]): History {
   if (!events.length || events[0].kind !== 'run_started' || events[0].scriptSha256 !== definition.scriptSha256 ||
@@ -34,6 +40,7 @@ function inspectEvents(definition: OrchestrationDefinition, events: WorkflowEven
   const readRetries = new Map<string,number>();
   let pending: History['pending'];
   let finished = false;
+  let result: unknown;
   let failed: string | undefined;
   let paused = false, cancelled = false;
   for (const event of events.slice(1)) {
@@ -70,8 +77,8 @@ function inspectEvents(definition: OrchestrationDefinition, events: WorkflowEven
       pending.message = String(event.message ?? 'Command outcome is uncertain');
     } else if (event.kind === 'command_retry') {
       if (!pending || event.key !== commandKey(pending.request) ||
-          !['readInput','observe','checkpoint'].includes(pending.request.kind))
-        throw new Error('Only a pending read-only command can be retried');
+          !safelyRetryable(pending.request))
+        throw new Error('Only a pending retryable command can be retried');
       const key=commandKey(pending.request);
       readRetries.set(key,(readRetries.get(key)??0)+1);
       seen.delete(key); pending=undefined;
@@ -79,13 +86,13 @@ function inspectEvents(definition: OrchestrationDefinition, events: WorkflowEven
       if (typeof event.reason!=='string'||!event.reason.trim()) throw new Error('Journal repair requires a reason');
     } else if (event.kind === 'run_finished') {
       if (pending) throw new Error('Orchestration finished with an unresolved command');
-      finished = true;
+      result = event.result ?? null; finished = true;
     } else if (event.kind === 'run_failed') {
       if (pending) throw new Error('Orchestration failed with an unresolved command');
       failed = String(event.message ?? 'Workflow script failed');
     } else throw new Error(`Unknown orchestration event: ${event.kind}`);
   }
-  return { committed, pending, finished, failed, readRetries, paused, cancelled };
+  return { committed, pending, finished, result, failed, readRetries, paused, cancelled };
 }
 
 function validateCommand(request: CommandRequest): void {
@@ -103,6 +110,23 @@ function validateCommand(request: CommandRequest): void {
         !Array.isArray(args.choices) || args.choices.length < 2 || args.choices.length > 20 ||
         args.choices.some(choice => typeof choice !== 'string' || !choice.trim()) ||
         new Set(args.choices).size !== args.choices.length) throw new Error('ask requires a question and 2..20 unique choices');
+  }
+  if (request.kind === 'suno') {
+    const args=request.args;
+    if (!object(args) || !['inspect','prepare','submit','wait'].includes(String(args.op)))
+      throw new Error('Unsupported Suno operation');
+    if (args.op === 'prepare' || args.op === 'submit') {
+      if (!object(args.song) || !['title','lyrics','style'].every(key=>
+        typeof (args.song as Record<string,unknown>)[key] === 'string' &&
+        Boolean(String((args.song as Record<string,unknown>)[key]).trim())))
+        throw new Error('Suno operation requires title, lyrics and style');
+    }
+    if (args.op === 'submit' && (!Array.isArray(args.baselineUrls) ||
+        args.baselineUrls.some(url=>typeof url!=='string'))) throw new Error('Suno submit requires baselineUrls');
+    if (args.op === 'wait' && (!Array.isArray(args.trackUrls) || !args.trackUrls.length ||
+        args.trackUrls.some(url=>typeof url!=='string') ||
+        !Number.isInteger(args.timeoutMs) || Number(args.timeoutMs)<1 || Number(args.timeoutMs)>60_000))
+      throw new Error('Suno wait requires trackUrls and timeoutMs 1..60000');
   }
   if (['observe','step','waitFor'].includes(request.kind) && !request.scope.includes('/desktop:'))
     throw new Error(`${request.kind} must run inside withDesktop`);
@@ -172,6 +196,7 @@ function report(definition: OrchestrationDefinition, runDirectory: string, histo
       args: history.pending.request.args } } : {}),
     ...(history.pending?.message || history.failed || (!active && status === 'running' ? 'Interrupted; resume is available' : undefined)
       ? { message: history.pending?.message ?? history.failed ?? 'Interrupted; resume is available' } : {}),
+    ...(history.finished ? {result:history.result} : {}),
     runDirectory };
 }
 
@@ -237,12 +262,12 @@ async function execute(definition: OrchestrationDefinition, runDirectory: string
     if (await sha256File(definition.script) !== definition.scriptSha256)
       throw new Error('Trusted workflow script changed; create a new run');
     const loaded = await load(runDirectory);
-    if (loaded.history.pending && ['readInput','observe','checkpoint'].includes(loaded.history.pending.request.kind)) {
+    if (loaded.history.pending && safelyRetryable(loaded.history.pending.request)) {
       const key=commandKey(loaded.history.pending.request);
       if ((loaded.history.readRetries.get(key)??0)>=3) throw new Error(`${key} exceeded three read-only recovery attempts`);
       const retryJournal=await WorkflowJournal.appendExisting(runDirectory);
       try { loaded.events.push(await retryJournal.append({kind:'command_retry',key,
-        reason:'Read-only command may safely be re-observed after interruption'})); }
+        reason:'Retryable command may safely be repeated after interruption'})); }
       finally { await retryJournal.close(); }
       loaded.history=inspectEvents(definition,loaded.events);
     }
