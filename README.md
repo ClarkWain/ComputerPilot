@@ -1,8 +1,21 @@
 # DesktopPilot
 
-DesktopPilot 是供 AI Agent 使用的 Windows 桌面操作程序，使用 C++20 / CMake 开发。Agent 读取窗口、控件和截图，提出操作意图；DesktopPilot 负责定位控件、恢复窗口焦点并执行。运行不需要 Node 或 Python。
+DesktopPilot 是供 AI Agent 使用的 Windows / macOS 桌面操作程序，使用 C++20 / CMake 开发。Agent 读取窗口、控件和截图，提出操作意图；DesktopPilot 负责定位控件、恢复窗口焦点并执行。运行不需要 Node 或 Python。
 
 核心能力是**应用语义操作**：例如 Agent 提交“画一个红色圆”，程序根据适合当前应用的 profile 完成选工具、设置填充、输入 RGB、绘制和提交。没有匹配 profile 时，仍可使用点击、文本输入、按键、拖动和连续鼠标路径。
+
+## macOS
+
+新增 macOS 14+ 原生通用后端：窗口枚举、Accessibility 控件读取与填写、ScreenCaptureKit 截图、键鼠输入和权限诊断，保持相同四工具 MCP 接口。macOS 暂不新增 Paint/Aseprite profile。锁屏时降级为后台诊断，界面批次暂停；解锁后须重新观察再继续，不自动重放。
+
+```sh
+cmake --preset core-only
+cmake --build --preset core-only --parallel 4
+ctest --preset core-only -LE interactive
+./build/core/desktop-pilot doctor
+```
+
+运行前需在系统隐私设置授予实际启动器/程序「辅助功能」和「屏幕录制」权限；`ready:false` 时按诊断修正后重连。macOS 构建、MCP 配置、点坐标与 Retina 截图说明见 [macOS 接入](docs/MACOS.md)。下文 Paint 适配和 Windows 会话说明仅适用于 Windows 后端。
 
 ## v0.5.0 更新与升级
 
@@ -11,6 +24,17 @@ DesktopPilot 是供 AI Agent 使用的 Windows 桌面操作程序，使用 C++20
 从 v0.4.0 升级时，MCP 工具名称保持不变；重启服务以使用新版程序和 profile。Aseprite 的固定坐标保存动作已移除；核心发行包不含 OCR，因此不会显示 OCR 菜单动作。
 
 动作执行完成不代表画面正确。逐图形像素抽样方案已撤销；Agent 在批次后查看截图验收。小尺寸原生多边形仍有已知问题，实验中的扫描线绘法尚未集成为自动语义后端。完整变更见 [CHANGELOG](CHANGELOG.md)，验证范围见 [验证记录](docs/OPTIMIZATION-VALIDATION.md)。
+
+## 小花 Replay
+
+新增原生 CLI 动作回放入口，默认只校验；实际执行会新建空白 PNG 并在 macOS 中文“预览”里重画小花，不复用旧窗口/控件 ID，不覆盖原图。
+
+```sh
+./build/core/desktop-pilot replay --file examples/replays/flower-preview/replay.json
+./build/core/desktop-pilot replay --file examples/replays/flower-preview/replay.json --mode run --output out/my-flower-replay
+```
+
+输出目录必须不存在；锁屏或中途失败即停止，不自动重试或续跑。见 [小花示例](examples/replays/flower-preview/README.md) 与 [Replay 格式](docs/REPLAY.md)。MCP 工具数量保持四个。
 
 ## 四个工具
 

@@ -1,5 +1,7 @@
 # 构建与发布
 
+macOS 14+ 使用原生 Objective-C++ / Accessibility / ScreenCaptureKit 后端，构建、权限、打包和验证见 [macOS](MACOS.md)。`core-only` preset 会采用宿主默认生成器，Windows 使用 Visual Studio，macOS 使用 Makefiles；可用 `-G` 显式选择。
+
 ## Core：不下载模型
 
 Windows x64，Visual Studio 2022（C++ 桌面开发和 Windows SDK），CMake 3.29+，PowerShell。

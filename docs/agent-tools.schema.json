@@ -20,7 +20,7 @@
       "openWorldHint": true,
       "readOnlyHint": false
     },
-    "description": "Get controls and semantic profiles by default. mode:image skips UI Automation and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.",
+    "description": "Get controls and semantic profiles by default. mode:image skips native accessibility and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative native units (Windows physical pixels; macOS points) for a lossless detail view (also capped at 1600). Restores focus unless activate:false. macOS locked sessions return paused:true; unlock and observe again before resuming.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -132,7 +132,7 @@
       "openWorldHint": true,
       "readOnlyHint": false
     },
-    "description": "Execute basic actions on the last observed window. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.",
+    "description": "Execute basic actions on the last observed window. control_id clicks prefer direct native accessibility invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise native window units: Windows pixels or macOS points). Mapping is internal. Stops on failure without replay. A desktop pause reports completed/failedIndex and requires a fresh observation after unlock; submit only unfinished actions.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {

@@ -1,4 +1,4 @@
-name: Windows build
+name: Desktop builds
 on:
   push:
     branches: [main]
@@ -48,4 +48,33 @@ jobs:
           path: |
             out/DesktopPilot-windows-x64-core.zip
             out/SHA256SUMS.txt
+          if-no-files-found: error
+
+  macos-core:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Configure and build macOS core
+        run: |
+          cmake --preset core-only
+          cmake --build --preset core-only --parallel 4
+      - name: Non-interactive macOS regression tests
+        run: ctest --preset core-only -LE interactive
+      - name: Check generated API reference
+        shell: pwsh
+        run: ./examples/onboarding/generate-reference.ps1 -Executable ./build/core/desktop-pilot -Check
+      - name: Build C++ consumer
+        run: |
+          cmake -S examples/cpp -B build/consumer -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/consumer --parallel 4
+          ./build/consumer/desktop-pilot-example
+      - name: Package macOS core
+        run: |
+          cmake -DDP_BINARY_DIR=build/core -DDP_PACKAGE_DIR=out/dist/DesktopPilot-macos -P cmake/package.cmake
+          ./out/dist/DesktopPilot-macos/bin/desktop-pilot capabilities
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: DesktopPilot-macos-core
+          path: out/dist/DesktopPilot-macos
           if-no-files-found: error

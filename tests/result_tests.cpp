@@ -1,3 +1,4 @@
+#include <desktop_pilot/platform.hpp>
 #include <desktop_pilot/core.hpp>
 #include <array>
 #include <cmath>
@@ -5,7 +6,7 @@
 #include <iostream>
 #include <stdexcept>
 
-int wmain(int argc,wchar_t** argv) {
+DP_MAIN(pilot_main) {
     using namespace dp;
     try {
         if(argc!=3) throw std::runtime_error("Expected result JSON and overlay PNG");

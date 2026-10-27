@@ -55,6 +55,13 @@ Json Service::execute(const std::string &op, const Json &args) {
     }
 }
 Json Service::perform(const std::string &op, const Json &args) {
+#ifdef __APPLE__
+    if(!background_operation(op)) {
+        auto preflight=desktop_preflight(desktop_.execute("system.session",Json::object()));
+        auto access=desktop_operation_access(op,preflight);
+        if(!access.empty())return access;
+    }
+#endif
     if(op=="app.launch") {
         auto launched=desktop_.execute(op,args);
         if(args.value("hidden",false))return launched;
@@ -120,6 +127,7 @@ Json Service::perform(const std::string &op, const Json &args) {
     }
     if (op.starts_with("capture.")) {
         auto captured = desktop_.execute(op, args);
+        if(operation_failed(captured))return captured;
         captured["contentRef"] = captured["imageRef"];
         captured["imageRef"] =
             "capture-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +

@@ -1,12 +1,12 @@
+#include <desktop_pilot/platform.hpp>
 #include <desktop_pilot/profiles.hpp>
 #include <desktop_pilot/ocr.hpp>
 #include <fstream>
-#include <windows.h>
 #include <iostream>
 using namespace dp;
-int wmain(int argc,wchar_t** argv) {
+DP_MAIN(pilot_main) {
     if(argc!=3)return 2;
-    auto dir=std::filesystem::temp_directory_path()/(L"dp-profile-tests-"+std::to_wstring(GetCurrentProcessId()));
+    auto dir=std::filesystem::temp_directory_path()/(L"dp-profile-tests-"+std::to_wstring(dp::process_id()));
     int checks=0,dispatches=0,treeReads=0;
     try {
         std::filesystem::create_directories(dir/L"mspaint-classic-zh-CN");

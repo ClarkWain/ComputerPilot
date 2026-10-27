@@ -3,7 +3,7 @@
 #include <memory>
 
 namespace dp {
-// One instance belongs to one COM MTA thread. References are session-local.
+// One instance belongs to one executor thread (COM MTA on Windows). References are session-local.
 class Desktop {
 public:
     Desktop();

@@ -1,5 +1,7 @@
 # DesktopPilot MCP 接入
 
+macOS 的配置、权限诊断和坐标说明见 [macOS 接入](MACOS.md)。其公开工具与 Windows 相同，程序路径为无 `.exe` 后缀的 `desktop-pilot`。
+
 DesktopPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state`、`execute_semantic`、`execute_batch`。语义动作是优先执行方式，但取决于实际窗口是否有匹配 profile。完整操作教程见 [Skill](../skills/desktoppilot/SKILL.md)，精确 schema 见 [接口参考](AGENT-API.md)。
 
 ## 配置
@@ -11,6 +13,10 @@ DesktopPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state`
 将路径替换为真实路径。源码构建位于 `build/core/Release`，发行包位于 `bin`。服务必须和目标应用在同一个 Windows 用户会话、输入桌面中运行，不能从不允许输入的隔离环境启动。
 
 初始化自动检查实际 worker 环境，结果在 `_meta["desktopPilot/desktopPreflight"]`。执行时还会检查，不需要 Agent 另调环境工具。**连接成功不代表环境可用。** 附带 Open-Pilot 只保存初始化响应，不会因 ready:false 自动抛错。调用方须判断 ready 是布尔 true；false 或诊断缺失时停止输入，按 reasons/nextAction 修正启动环境并重连。宿主隐藏初始化响应时不能编造 ready:true，仍须处理执行器返回的环境错误。启动诊断写 stderr；stdout 专用于 JSON-RPC。
+
+macOS 的 `ready:false` 同时返回 `executionMode:background_only` 与具体能力分类。当前没有锁屏应用写入动作通过实测；窗口列表/元数据等诊断可继续。界面批次遇到锁屏返回 `paused:true`、`completed`、`failedIndex` 和 `resumeRequiresObservation:true`。正常解锁无需重启服务，但必须重新 `get_window_state` 并检查失败动作是否部分完成，再仅提交剩余动作；服务不自动重放。详见 [锁屏降级与恢复](MACOS.md#锁屏降级与恢复)。
+
+显式动作回放由 `desktop-pilot replay` CLI 提供，不是第五个 MCP 工具。它使用新画布和新观察执行已定义的流程；失败后仍不会自动重放。见 [Replay](REPLAY.md)。
 
 ## 四个工具的分工
 

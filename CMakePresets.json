@@ -14,21 +14,54 @@
         "DP_TEST_OCR": "${sourceDir}/models/ocr",
         "DP_TEST_MODEL": "${sourceDir}/models/icon_detect_v3/model.pt",
         "BUILD_TESTING": "ON"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
       }
     },
     {
       "name": "core-only",
-      "inherits": "windows-release",
       "binaryDir": "${sourceDir}/build/core",
-      "cacheVariables": { "DP_WITH_TORCH": "OFF", "DP_TEST_MODEL": "", "DP_WITH_OCR": "OFF", "DP_TEST_OCR": "" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "DP_WITH_TORCH": "OFF",
+        "DP_WITH_OCR": "OFF",
+        "DP_TEST_MODEL": "",
+        "DP_TEST_OCR": "",
+        "BUILD_TESTING": "ON"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release" },
-    { "name": "core-only", "configurePreset": "core-only", "configuration": "Release" }
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release"
+    },
+    {
+      "name": "core-only",
+      "configurePreset": "core-only",
+      "configuration": "Release"
+    }
   ],
   "testPresets": [
-    { "name": "windows-release", "configurePreset": "windows-release", "configuration": "Release", "output": { "outputOnFailure": true } },
-    { "name": "core-only", "configurePreset": "core-only", "configuration": "Release", "output": { "outputOnFailure": true } }
+    {
+      "name": "windows-release",
+      "configurePreset": "windows-release",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "core-only",
+      "configurePreset": "core-only",
+      "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }

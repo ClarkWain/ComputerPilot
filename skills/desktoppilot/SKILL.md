@@ -1,6 +1,6 @@
 ---
 name: desktoppilot
-description: 使用 DesktopPilot 操纵 Windows 桌面软件，读取控件和截图，执行应用语义、填写表单、键鼠操作并验证结果。实际桌面操作时使用；解释软件用法或编辑代码时无需使用。
+description: 使用 DesktopPilot 操纵 Windows / macOS 桌面软件，读取控件和截图，执行应用语义、填写表单、键鼠操作并验证结果。实际桌面操作时使用；解释软件用法或编辑代码时无需使用。
 ---
 
 # 使用 DesktopPilot 操纵电脑
@@ -27,6 +27,18 @@ description: 使用 DesktopPilot 操纵 Windows 桌面软件，读取控件和�
 减少工具数量不代表取消判断。程序负责自动检查环境、恢复焦点、管理状态；Agent 仍须读取检查结果、辨认目标、处理失败和核验任务。下文所有 JSON 输入都是工具参数，输出是字段示意；示例 ID、路径、坐标和结果文本必须替换成实际值。
 
 开始前先明确：操作哪个应用/文档、需要改变什么、什么现象算完成。填写看字段是否精确等于目标值，提交看应用反馈，绘画看成品是否符合参考。用户要求不保存、不改窗口大小或使用指定工具时，整个流程都保留这些要求。
+
+## macOS 平台说明
+
+macOS 14+ 原生程序为 `build/core/desktop-pilot` 或分发目录 `bin/desktop-pilot`，启动参数仍为 `serve`，保持同一持久连接。先读初始化中实际 worker 的 preflight。需要辅助功能与屏幕录制授权，且目标和执行器在同一个已解锁的图形用户会话；失败时修正权限/启动环境、重启连接，不反复点击。
+
+锁屏时 preflight 保持 `ready:false`，`executionMode:background_only`；只可用返回能力中的后台诊断，当前 `lockedApplicationActions` 为空。界面批次返回 `paused:true` 时保留 completed/failedIndex/failedActionOutcome。正常解锁无需重启服务，但必须重新获取窗口状态；失败动作可能已部分完成，先检查结果再只提交未完成部分，不能整批重放。后台会话监测会使旧观察失效，Agent 不管理 generation。权限或启动环境变化仍按诊断重启连接。
+
+macOS 本阶段无新增应用 profile，优先按实际控件/截图使用 `execute_batch`。`Cmd` / `Command` 是 Command，`Option` 是 Option，`Ctrl` 仍为 Control。仅控件状态返回 `window_relative_points`，region 也使用窗口相对点坐标；截图状态返回 `image_pixels`，程序自动换算 Retina 与缩放，Agent 不乘屏幕倍率。下文 exe、Win32/UIA、Paint 和 PowerShell 启动细节用于 Windows；相同的四工具流程、观察和验收要求用于两平台。完整说明见仓库 `docs/MACOS.md`。
+
+## 显式 Replay
+
+用户明确要求回放现有配方时，可运行原生 CLI `desktop-pilot replay --file 配方.json` 先完整校验，再以 `--mode run --output 新目录` 执行。当前小花配方在 macOS 中文“预览”的新建画布中绘制；记录不包含旧会话引用，输入仍由实际 worker 预检并重新观察定位。不要把“用户要求回放”解释成允许在已有文档上重放失败动作；每次使用独立新画布，失败立即停下并检查报告。详见安装根目录 `docs/REPLAY.md`。
 
 ## 一、建立连接
 

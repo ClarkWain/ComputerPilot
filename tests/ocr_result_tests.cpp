@@ -1,8 +1,9 @@
+#include <desktop_pilot/platform.hpp>
 #include <desktop_pilot/ocr.hpp>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-int wmain(int argc,wchar_t** argv){
+DP_MAIN(pilot_main){
     using namespace dp;
     try{
         if(argc<2)throw std::runtime_error("Expected result JSON");

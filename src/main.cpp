@@ -1,3 +1,5 @@
+#include <desktop_pilot/platform.hpp>
+#include <desktop_pilot/replay.hpp>
 #include <desktop_pilot/detector.hpp>
 #include <desktop_pilot/ocr.hpp>
 #include <desktop_pilot/desktop.hpp>
@@ -45,12 +47,17 @@ int integer(const Options& args,const std::wstring& key,int fallback,int min,int
     return int(v);
 }
 Json capabilities() {
+#ifdef __APPLE__
+    constexpr bool replay_execution=true;
+#else
+    constexpr bool replay_execution=false;
+#endif
     return {{"name","DesktopPilot"},{"version",DP_PROJECT_VERSION},{"transport","cli"},{"pythonRequired",false},
         {"operations",{{"image.decode",true},{"image.fixture",true},{"vision.detect",Detector::available()},
-        {"vision.overlay",true},{"vision.ocr",Ocr::available()},{"vision.textAssociation",true},{"ui.fusion",true},{"desktop.capture",true},{"input.click",true},{"mcp",true}}}};
+        {"vision.overlay",true},{"vision.ocr",Ocr::available()},{"vision.textAssociation",true},{"ui.fusion",true},{"desktop.capture",true},{"input.click",true},{"mcp",true},{"replay.validate",true},{"replay.run",replay_execution}}}};
 }
 }
-int wmain(int argc,wchar_t** argv) {
+DP_MAIN(pilot_main) {
     try {
         if(argc<2 || std::wstring(argv[1])==L"--help") {
             std::cout<<"DesktopPilot native screenshot parser\n"
@@ -61,10 +68,18 @@ int wmain(int argc,wchar_t** argv) {
                 "  ocr --image FILE --ocr-models DIR [--output FILE.json] [--overlay FILE.png]\n"
                 "  agent-schema (machine-readable common tool schemas)\n"
                 "  doctor (read-only desktop preflight; exit 3 when not ready)\n"
+                "  replay --file RECIPE.json [--mode validate|run] [--output NEW_DIRECTORY]\n"
                 "  serve (MCP stdio) [--input FILE.jsonl --output FILE.jsonl]\n  jsonl (native registry)\n"; return 0;
         }
         std::wstring command=argv[1];
         if(command==L"agent-schema") {parse_options(argc,argv,{});std::cout<<dump_json(AgentApi::tools(),2)<<'\n';return 0;}
+        if(command==L"replay") {
+            auto args=parse_options(argc,argv,{L"--file",L"--mode",L"--output"});
+            auto mode=get(args,L"--mode",L"validate");
+            if(mode!=L"validate"&&mode!=L"run")throw std::invalid_argument("Replay mode must be validate or run");
+            if(mode==L"validate"&&args.contains(L"--output"))throw std::invalid_argument("--output is only valid for replay --mode run");
+            return replay_cli(required(args,L"--file"),Path(get(args,L"--output")),mode==L"run");
+        }
         if(command==L"doctor") {
             parse_options(argc,argv,{});
             Service service;

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Add a native `replay` CLI with complete preflight validation, fresh document creation, dynamic control/canvas resolution, color assertions and stop-with-progress behavior. Include the cleaned 12-stroke Preview flower recipe and reference image; MCP remains four tools.
+
+- Validate the macOS native and public MCP paths against a disposable Cocoa fixture, including Unicode, Command+A, pointer paths, Retina crops and sheet handling. Fix sheet-control ownership checks using AX ancestry. See docs/MACOS-VALIDATION.md for scope.
+
+- Classify macOS locked-session capabilities explicitly, keep unvalidated app writes disabled, pause UI batches with progress/outcome diagnostics, and invalidate old observations after observed session transitions. Background diagnostics and local vision processing remain available.
+
+- Add a macOS 14+ native backend for window discovery, Accessibility inspection/fill/press, ScreenCaptureKit screenshots, and CGEvent input while retaining the four-tool MCP API.
+- Add macOS permission/session preflight, Retina point/pixel mapping, worker timeout/cancellation recovery, core build/test support, onboarding, and core packaging. No macOS Paint/Aseprite profiles are introduced.
+
 ## 0.5.0 — 2026-09-24
 
 - Improve UI Automation and worker failure handling: preserve screenshots when inspection fails, reject incomplete profile evidence, and invalidate stale references consistently.

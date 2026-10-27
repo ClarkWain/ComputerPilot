@@ -33,6 +33,17 @@ int main() {
         require(requires_interactive_desktop("ui.fill_form"), "form must be checked");
         require(!requires_interactive_desktop("system.session"), "diagnostics remain available");
         require(!requires_interactive_desktop("capture.window"), "diagnostic capture remains available");
+        Json mac={{"platform","macos"},{"consoleSession",true},{"sameUserSession",true},
+            {"accessibilityTrusted",true},{"screenCaptureAllowed",true},{"postEventAllowed",true},
+            {"lockState","unlocked"},{"secureInput",false}};
+        require(desktop_preflight(mac)["ready"]==true,"macOS granted console session must pass");
+        for(auto key:{"consoleSession","sameUserSession","accessibilityTrusted","screenCaptureAllowed","postEventAllowed"}) {
+            auto denied=mac;denied[key]=false;require(desktop_preflight(denied)["ready"]==false,"missing macOS permission/session must block");
+            denied.erase(key);require(desktop_preflight(denied)["ready"]==false,"unknown macOS permission must block");
+        }
+        auto secure=mac;secure["secureInput"]=true;require(desktop_preflight(secure)["ready"]==false,"Secure Input must block");
+        auto macLocked=mac;macLocked["lockState"]="locked";require(desktop_preflight(macLocked)["ready"]==false,"macOS lock must block");
+        macLocked.erase("lockState");require(desktop_preflight(macLocked)["ready"]==false,"unknown macOS lock must block");
         std::cout << "PASS checks=" << checks << '\n';
         return 0;
     } catch(const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

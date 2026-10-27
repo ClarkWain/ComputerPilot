@@ -7,6 +7,7 @@ int main(){
  try {
   AgentApi api;Json bounds={{"x",100},{"y",200},{"width",400},{"height",300}};
   Json control_id={{"elementRef","e1"},{"name","Title"},{"role","Edit"},{"value","old"},{"bounds",{{"x",120},{"y",230},{"width",100},{"height",20}}}};
+  bool pointUnits=false;
   bool multi=false,empty=false,fail=false,foreground=true,enabled=true,activationWorks=true,stealFocus=false;int activations=0;Json last;
   Json frame={{"width",200},{"height",150},{"bounds",bounds},{"path","test.webp"},{"imageRef","image1"}};
   int profileReads=0,treeReads=0,captures=0;bool inspectionFails=false,invalidated=false,profileFails=false,malformedTree=false;
@@ -14,6 +15,7 @@ int main(){
   auto dispatch=[&](const std::string& op,const Json& args)->Json{
    if(op==resetOperation)return {{"status","error"},{"referencesInvalidated",true},{"dispatch","unknown"},{"code","provider_timeout"}};
    Json w={{"windowRef","w1"},{"pid",42},{"title","Example"},{"foreground",foreground},{"enabled",enabled},{"bounds",bounds}};
+   if(pointUnits)w["coordinateUnits"]="screen_points";
    if(!enabled)w["blockingWindow"]={{"windowRef","dialog"},{"title","Confirm"},{"pid",42}};
    if(op=="semantic.profiles") {
     ++profileReads;
@@ -155,6 +157,14 @@ int main(){
    check(api.call("get_window_state",{{"window_id","w1"},{"mode","image"}},dispatch)["code"]=="unknown_window","every worker reset clears targets");
    check(act({{"type","press_keys"},{"chord","Enter"}})["code"]=="state_required","every worker reset clears observations");
   }
+  pointUnits=true;api.call("list_windows",Json::object(),dispatch);
+  o=observe();check(o["coordinateSpace"]=="window_relative_points","macOS controls expose native point units");
+  r=act({{"type","press_keys"},{"chord","Command+Option+A"}});
+  check(r["status"]=="ok"&&last["keys"]==Json({"WIN","ALT","A"}),"macOS modifier aliases normalize");
+  frame["width"]=50;frame["height"]=50;
+  api.call("get_window_state",{{"window_id","w1"},{"mode","image"}},dispatch);
+  r=act({{"type","click"},{"point",{{"x",10},{"y",20}}}});
+  check(r["status"]=="ok"&&last["x"]==71&&last["y"]==101,"macOS crop image maps to native window points");
   std::cout<<"PASS checks="<<checks<<'\n';return 0;
  }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

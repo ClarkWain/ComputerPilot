@@ -85,13 +85,10 @@ int serve(bool mcp) {
     Json requestEnvironment;
     Dispatch dispatch = [&](const std::string &op, const Json &args) {
         checkCancelled();
-        if (requires_interactive_desktop(op)) {
+        if (!background_operation(op)) {
             if (requestEnvironment.is_null()) requestEnvironment = inspectEnvironment();
-            if (!requestEnvironment.value("ready", false))
-                return Json{{"status", "error"}, {"code", "desktop_environment_not_ready"},
-                    {"dispatch", "not_started"}, {"verification", "not_attempted"},
-                    {"message", requestEnvironment.value("message", std::string("Desktop preflight failed"))},
-                    {"preflight", requestEnvironment}};
+            auto access=desktop_operation_access(op,requestEnvironment);
+            if(!access.empty())return access;
         }
         return mcp ? worker->execute(op, args) : local->execute(op, args);
     };

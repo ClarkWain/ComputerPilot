@@ -1,7 +1,7 @@
 #include <desktop_pilot/profiles.hpp>
 #include <desktop_pilot/service.hpp>
 #include <desktop_pilot/ocr.hpp>
-#include <windows.h>
+#include <desktop_pilot/platform.hpp>
 #include <fstream>
 #include <algorithm>
 #include <cctype>
@@ -42,19 +42,13 @@ bool profile_supports_dpi(const Json& profile,int dpi) {
     return false;
 }
 std::filesystem::path profiles_directory() {
-    wchar_t configured[32768]{};
-    auto n=GetEnvironmentVariableW(L"DESKTOPPILOT_PROFILES_DIR",configured,32768);
-    if(n) {
-        if(n>=32768)throw std::invalid_argument("DESKTOPPILOT_PROFILES_DIR is too long");
-        return std::filesystem::path(configured);
-    }
-    wchar_t executable[32768]{};
-    n=GetModuleFileNameW(nullptr,executable,32768);
-    if(!n||n>=32768)throw std::runtime_error("Cannot locate executable profiles directory");
-    auto dir=std::filesystem::path(executable).parent_path();
+    const auto configured=environment_path("DESKTOPPILOT_PROFILES_DIR");
+    if(!configured.empty())return configured;
+    const auto executable=executable_path();
+    auto dir=executable.parent_path();
     for(int i=0;i<5;++i,dir=dir.parent_path())
-        if(std::filesystem::is_directory(dir/L"profiles"))return dir/L"profiles";
-    return std::filesystem::path(executable).parent_path()/L"profiles";
+        if(std::filesystem::is_directory(dir/"profiles"))return dir/"profiles";
+    return executable.parent_path()/"profiles";
 }
 Json load_profile(const std::filesystem::path& directory,const std::string& id) {
     if(id.empty()||id=="."||id==".."||id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")!=std::string::npos)

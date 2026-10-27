@@ -16,7 +16,7 @@
 #include <desktop_pilot/semantic.hpp>
 #include <desktop_pilot/profiles.hpp>
 #include <desktop_pilot/service.hpp>
-#include <windows.h>
+#include <desktop_pilot/platform.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cctype>
@@ -35,24 +35,14 @@ std::filesystem::path resolve_ocr_models(const Json& profile) {
     // CMake install layout produces.
     if (profile.contains("ocrModels") && profile.at("ocrModels").is_string())
         return std::filesystem::path{profile.at("ocrModels").get<std::string>()};
-    wchar_t configured[32768]{};
-    auto n = GetEnvironmentVariableW(L"DESKTOPPILOT_OCR_MODELS", configured, 32768);
-    if (n && n < 32768) {
-        std::filesystem::path env_path{configured};
-        if (std::filesystem::is_regular_file(env_path / L"det.onnx") &&
-            std::filesystem::is_regular_file(env_path / L"rec.onnx"))
-            return env_path;
-    }
-    wchar_t executable[32768]{};
-    n = GetModuleFileNameW(nullptr, executable, 32768);
-    if (n && n < 32768) {
-        auto dir = std::filesystem::path(executable).parent_path();
-        for (int i = 0; i < 6; ++i, dir = dir.parent_path()) {
-            auto candidate = dir / L"models" / L"ocr";
-            if (std::filesystem::is_regular_file(candidate / L"det.onnx") &&
-                std::filesystem::is_regular_file(candidate / L"rec.onnx"))
-                return candidate;
-        }
+    const auto configured=environment_path("DESKTOPPILOT_OCR_MODELS");
+    if(!configured.empty() && std::filesystem::is_regular_file(configured/"det.onnx") &&
+       std::filesystem::is_regular_file(configured/"rec.onnx"))return configured;
+    auto dir=executable_path().parent_path();
+    for(int i=0;i<6;++i,dir=dir.parent_path()) {
+        auto candidate=dir/"models"/"ocr";
+        if(std::filesystem::is_regular_file(candidate/"det.onnx") &&
+           std::filesystem::is_regular_file(candidate/"rec.onnx"))return candidate;
     }
     throw std::runtime_error(
         "ocr_models_unavailable: place det.onnx and rec.onnx under models/ocr, "

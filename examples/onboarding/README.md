@@ -1,5 +1,7 @@
 # 从第一个任务迁移到实际应用
 
+macOS 使用 `python3 examples/onboarding/macos-check.py ./build/core/desktop-pilot` 做只读连接检查，表单验证使用 `ctest --preset core-only -L interactive`。详见 [macOS](../../docs/MACOS.md)。macOS 的锁屏检查返回后台能力分类；界面批次暂停后，解锁并重新观察，再仅提交未完成动作。下面的 PowerShell/Win32 示例用于 Windows。
+
 在仓库或 Release 根目录执行，入口自动查找本目录的二进制；也可传 -Executable 指定真实程序。只使用原生 DesktopPilot 和 PowerShell。
 
 ## 第一步：连接

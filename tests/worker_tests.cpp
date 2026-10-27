@@ -1,9 +1,10 @@
+#include <desktop_pilot/platform.hpp>
 #include <desktop_pilot/worker.hpp>
 #include <chrono>
 #include <iostream>
 #include <thread>
 #include <stdexcept>
-int wmain(int argc, wchar_t **argv) {
+DP_MAIN(pilot_main) {
     if (argc > 1 && std::wstring(argv[1]) == L"jsonl") {
         std::string line;
         while (std::getline(std::cin, line)) {

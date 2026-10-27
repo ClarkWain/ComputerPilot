@@ -10,7 +10,7 @@ List all open windows. No parameters. Read the returned titles and pids to ident
 
 ## get_window_state
 
-Get controls and semantic profiles by default. mode:image skips UI Automation and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.
+Get controls and semantic profiles by default. mode:image skips native accessibility and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative native units (Windows physical pixels; macOS points) for a lossless detail view (also capped at 1600). Restores focus unless activate:false. macOS locked sessions return paused:true; unlock and observe again before resuming.
 
 | 字段 | 必填 | 类型/取值 |
 |---|---|---|
@@ -31,7 +31,7 @@ PREFERRED when get_window_state returns a matching profile. Execute 1..256 app a
 
 ## execute_batch
 
-Execute basic actions on the last observed window. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.
+Execute basic actions on the last observed window. control_id clicks prefer direct native accessibility invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise native window units: Windows pixels or macOS points). Mapping is internal. Stops on failure without replay. A desktop pause reports completed/failedIndex and requires a fresh observation after unlock; submit only unfinished actions.
 
 | 字段 | 必填 | 类型/取值 |
 |---|---|---|
@@ -93,4 +93,4 @@ Execute basic actions on the last observed window. control_id clicks prefer dire
 | points | 是 | array |
 | type | 是 | move |
 
-point/from/to 均为 {x:整数,y:整数}，遵循最近观察的 coordinateSpace：有截图使用图片像素，仅 controls 使用窗口物理像素；程序自动转换，必须在观察范围内。click 的 point/control_id 必须二选一。count 为 1 或 2，actions 数量为 1..256。move.points 为 1..4096 个 [x,y] 整数对；hold 可选 left/right/middle，指定时至少两点：首点按下、连续移动、末点松开，省略则只移动。delay_ms 是动作前等待。完整机器可读定义见 agent-tools.schema.json；该文件由同一命令生成。
+point/from/to 均为 {x:整数,y:整数}，遵循最近观察的 coordinateSpace：有截图使用图片像素，仅 controls 使用窗口原生单位（Windows 物理像素，macOS 点坐标）；程序自动转换，必须在观察范围内。click 的 point/control_id 必须二选一。count 为 1 或 2，actions 数量为 1..256。move.points 为 1..4096 个 [x,y] 整数对；hold 可选 left/right/middle，指定时至少两点：首点按下、连续移动、末点松开，省略则只移动。delay_ms 是动作前等待。完整机器可读定义见 agent-tools.schema.json；该文件由同一命令生成。

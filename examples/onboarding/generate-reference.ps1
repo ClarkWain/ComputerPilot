@@ -27,7 +27,7 @@ foreach($t in $tools){
 $lines.Add('## action 类型');$lines.Add('')
 $actions=($tools|Where-Object name -eq 'execute_batch').inputSchema.properties.actions.items.oneOf
 foreach($a in $actions){$lines.Add("### $($a.properties.type.const)");$lines.Add('');Add-Fields $a}
-$lines.Add('point/from/to 均为 {x:整数,y:整数}，遵循最近观察的 coordinateSpace：有截图使用图片像素，仅 controls 使用窗口物理像素；程序自动转换，必须在观察范围内。click 的 point/control_id 必须二选一。count 为 1 或 2，actions 数量为 1..256。move.points 为 1..4096 个 [x,y] 整数对；hold 可选 left/right/middle，指定时至少两点：首点按下、连续移动、末点松开，省略则只移动。delay_ms 是动作前等待。完整机器可读定义见 agent-tools.schema.json；该文件由同一命令生成。')
+$lines.Add('point/from/to 均为 {x:整数,y:整数}，遵循最近观察的 coordinateSpace：有截图使用图片像素，仅 controls 使用窗口原生单位（Windows 物理像素，macOS 点坐标）；程序自动转换，必须在观察范围内。click 的 point/control_id 必须二选一。count 为 1 或 2，actions 数量为 1..256。move.points 为 1..4096 个 [x,y] 整数对；hold 可选 left/right/middle，指定时至少两点：首点按下、连续移动、末点松开，省略则只移动。delay_ms 是动作前等待。完整机器可读定义见 agent-tools.schema.json；该文件由同一命令生成。')
 $doc=($lines -join "`n")+"`n"
 $outputs=@{'docs/AGENT-API.md'=$doc;'docs/agent-tools.schema.json'=$raw.TrimEnd()+"`n"}
 foreach($name in $outputs.Keys){

@@ -1,5 +1,6 @@
 #include <desktop_pilot/agent_api.hpp>
 #include <desktop_pilot/service.hpp>
+#include <desktop_pilot/preflight.hpp>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -33,7 +34,7 @@ Json keys(std::string chord) {
     while(std::getline(stream,key,'+')) {
         key.erase(std::remove_if(key.begin(),key.end(),[](unsigned char c){return std::isspace(c);}),key.end());
         std::transform(key.begin(),key.end(),key.begin(),[](unsigned char c){return char(std::toupper(c));});
-        static const std::map<std::string,std::string> aliases={{"CONTROL","CTRL"},{"CONTROL_L","CTRL"},{"RETURN","ENTER"},{"ESCAPE","ESC"},{"DEL","DELETE"},{"SPACEBAR","SPACE"}};
+        static const std::map<std::string,std::string> aliases={{"CMD","WIN"},{"COMMAND","WIN"},{"META","WIN"},{"OPTION","ALT"},{"CONTROL","CTRL"},{"CONTROL_L","CTRL"},{"RETURN","ENTER"},{"ESCAPE","ESC"},{"DEL","DELETE"},{"SPACEBAR","SPACE"}};
         if(auto it=aliases.find(key);it!=aliases.end())key=it->second;
         static const std::set<std::string> named={"CTRL","ALT","SHIFT","WIN","ENTER","TAB","ESC","BACKSPACE","DELETE","HOME","END","LEFT","RIGHT","UP","DOWN","SPACE","PAGEUP","PAGEDOWN","INSERT"};
         bool function=false;
@@ -46,6 +47,7 @@ Json keys(std::string chord) {
     return result;
 }
 }
+Json normalize_key_chord(const std::string& chord){return keys(chord);}
 Json AgentApi::tools() {
     auto s=stringSchema();
     auto point=objectSchema({{"x",{{"type","integer"},{"minimum",0}}},{"y",{{"type","integer"},{"minimum",0}}}},{"x","y"});
@@ -70,26 +72,48 @@ Json AgentApi::tools() {
     };
     add("list_windows","List all open windows. No parameters. Read the returned titles and pids to identify the intended window_id; does not activate or resize.",objectSchema(Json::object()),true);
     auto region=objectSchema({{"x",{{"type","integer"},{"minimum",0}}},{"y",{{"type","integer"},{"minimum",0}}},{"width",{{"type","integer"},{"minimum",1}}},{"height",{{"type","integer"},{"minimum",1}}}},{"x","y","width","height"});
-    add("get_window_state","Get controls and semantic profiles by default. mode:image skips UI Automation and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view (also capped at 1600). Restores focus unless activate:false.",objectSchema({{"window_id",s},{"mode",{{"type","string"},{"enum",{"controls","image","both"}},{"default","controls"}}},{"region",region},{"activate",{{"type","boolean"},{"default",true}}}},{"window_id"}),false);
+    add("get_window_state","Get controls and semantic profiles by default. mode:image skips native accessibility and profile discovery; semantic.status is not_checked. mode:both includes controls/profiles and a screenshot, preserving the screenshot on recoverable inspection errors. Screenshots are capped at 1600 pixels. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative native units (Windows physical pixels; macOS points) for a lossless detail view (also capped at 1600). Restores focus unless activate:false. macOS locked sessions return paused:true; unlock and observe again before resuming.",objectSchema({{"window_id",s},{"mode",{{"type","string"},{"enum",{"controls","image","both"}},{"default","controls"}}},{"region",region},{"activate",{{"type","boolean"},{"default",true}}}},{"window_id"}),false);
     auto semanticAction=objectSchema({{"action",s},{"args",{{"type","object"}}}},{"action","args"});
     add("execute_semantic","PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Native execution manages controls, colors, focus and waits. Stops on failure; inspect the result before retrying.",objectSchema({{"window_id",s},{"profile",s},{"actions",{{"type","array"},{"items",semanticAction},{"minItems",1},{"maxItems",256}}}},{"window_id","actions"}),false);
-    add("execute_batch","Execute basic actions on the last observed window. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.",objectSchema({{"window_id",s},{"actions",{{"type","array"},{"items",actionSchema},{"minItems",1},{"maxItems",256}}}},{"window_id","actions"}),false);
+    add("execute_batch","Execute basic actions on the last observed window. control_id clicks prefer direct native accessibility invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise native window units: Windows pixels or macOS points). Mapping is internal. Stops on failure without replay. A desktop pause reports completed/failedIndex and requires a fresh observation after unlock; submit only unfinished actions.",objectSchema({{"window_id",s},{"actions",{{"type","array"},{"items",actionSchema},{"minItems",1},{"maxItems",256}}}},{"window_id","actions"}),false);
     return rows;
 }
 Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& externalDispatch) {
     try {
         auto dispatch=[&](const std::string& operation,const Json& args) {
             auto result=externalDispatch(operation,args);
+            if(result.contains("desktopContext")) {
+                const auto& context=result.at("desktopContext");auto generation=context.value("generation",Json());
+                if(!context.value("ready",false)||(!desktopGeneration_.is_null()&&generation!=desktopGeneration_))observations_.clear();
+                desktopGeneration_=generation;
+            }
+            if(result.value("paused",false))observations_.clear();
             if(result.value("referencesInvalidated",false)) {
-                observations_.clear();targets_.clear();
+                observations_.clear();targets_.clear();desktopGeneration_=nullptr;
                 result["next"]="Worker references were invalidated. Call list_windows, then get_window_state mode:image with the new id. Inspect any prior input outcome before continuing; do not replay actions.";
             }
             return result;
+        };
+        auto desktopPause=[&](const Json& window)->Json {
+            if(!window.contains("desktopContext")||window["desktopContext"].value("ready",false))return Json::object();
+            const auto& context=window.at("desktopContext");
+            auto blocked=desktop_operation_access("window.activate",context.value("preflight",Json::object()));
+            if(blocked.empty())blocked=failure("desktop_environment_not_ready","Interactive session is unavailable.","get_window_state after restoring the session");
+            blocked["paused"]=true;blocked["resumeRequiresObservation"]=true;blocked["desktopContext"]=context;return blocked;
+        };
+        auto sameDesktop=[](const Json& a,const Json& b) {
+            if(a.contains("desktopContext")!=b.contains("desktopContext"))return false;
+            return !a.contains("desktopContext")||a["desktopContext"].at("generation")==b["desktopContext"].at("generation");
+        };
+        auto sessionChanged=[&]() {
+            auto result=failure("observation_required","Desktop session changed since observation.","get_window_state, inspect prior effects, then submit only unfinished actions");
+            result["paused"]=true;result["resumeRequiresObservation"]=true;return result;
         };
         // Focus recovery is executor work, not an extra agent planning step.
         auto prepareWindow=[&](const std::string& windowId)->Json {
             auto w=dispatch("window.get",{{"windowRef",windowId}});
             if(operation_failed(w))return w;
+            auto paused=desktopPause(w);if(!paused.empty())return paused;
             if(!w.value("enabled",true)) {
                 auto blocked=failure("window_blocked","Target is disabled; its modal dialog must be handled before these actions can continue.","Inspect the blocking window; do not replay input on another page.");
                 if(w.contains("blockingWindow")) {
@@ -103,6 +127,7 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                 if(operation_failed(activation))return activation;
                 w=dispatch("window.get",{{"windowRef",windowId}});
                 if(operation_failed(w))return w;
+                auto paused=desktopPause(w);if(!paused.empty())return paused;
                 if(!w.value("enabled",true))return failure("window_blocked","Target became blocked during activation.","get_window_state with activate:false to inspect");
                 if(!w.value("foreground",false))return failure("window_activation_failed","Automatic activation did not restore target focus.","Inspect desktop/session or blocking window; no action input sent.");
             }
@@ -116,7 +141,9 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                 auto ref=w.at("windowRef").get<std::string>();targets_[ref]=w;
                 candidates.push_back({{"window_id",ref},{"title",w.value("title",std::string{})},{"pid",w.at("pid")}});
             }
-            return {{"status","ok"},{"windows",candidates},{"next","Read titles/pids to identify the intended window_id, then get_window_state. No activation occurred."}};
+            Json result={{"status","ok"},{"windows",candidates},{"next","Read titles/pids to identify the intended window_id, then get_window_state. No activation occurred."}};
+            if(r.contains("desktopContext"))result["desktopContext"]=r["desktopContext"];
+            return result;
         }
         if(tool=="get_window_state") {
             fields(a,{"window_id","mode","activate","region"});auto window_id=requiredText(a,"window_id");
@@ -125,11 +152,13 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
             auto mode=a.value("mode",std::string("controls"));if(mode!="both"&&mode!="image"&&mode!="controls")throw std::invalid_argument("mode must be image, controls or both");
             if(a.contains("region")&&mode=="controls")throw std::invalid_argument("region requires mode:image or both");
             auto w=a.value("activate",true)?prepareWindow(window_id):dispatch("window.get",{{"windowRef",window_id}});if(operation_failed(w))return w;
+            auto paused=desktopPause(w);if(!paused.empty()){paused["window_id"]=window_id;paused["title"]=w.value("title",std::string{});return paused;}
             Observation o;o.id="state-"+std::to_string(++serial_);o.window=w;
             Json result={{"status","ok"},{"window_id",window_id},{"title",w.value("title",std::string{})},
-                {"foreground",w.value("foreground",false)},{"coordinateSpace","window_relative_physical_pixels"},
+                {"foreground",w.value("foreground",false)},{"coordinateSpace",w.value("coordinateUnits",std::string{})=="screen_points"?"window_relative_points":"window_relative_physical_pixels"},
                 {"size",{{"width",w["bounds"]["width"]},{"height",w["bounds"]["height"]}}},
                 {"next","Prefer execute_semantic if a profile matches; otherwise execute_batch. Inspect again to verify the result."}};
+            if(w.contains("desktopContext"))result["desktopContext"]=w["desktopContext"];
             // A screenshot must remain available when UI Automation is slow or broken.
             // An empty unchecked catalog is not evidence that an application is incompatible.
             Json profiles={{"status","not_checked"},{"profiles",Json::array()},{"unavailable",Json::array()},
@@ -198,6 +227,8 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                 result["inputSize"]={{"width",capture["width"]},{"height",capture["height"]}};
             }
             auto after=dispatch("window.get",{{"windowRef",window_id}});if(operation_failed(after))return after;
+            auto suspended=desktopPause(after);if(!suspended.empty())return suspended;
+            if(!sameDesktop(w,after))return sessionChanged();
             if(after["bounds"]!=w["bounds"])return failure("geometry_changed","Window moved while observing.","get_window_state");
             profiles.erase("inspection");
             result["semantic"]=profiles;
@@ -214,6 +245,7 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
             if(a.contains("profile"))request["profileId"]=requiredText(a,"profile");
             auto w=prepareWindow(window_id);if(operation_failed(w))return w;
             observations_.erase(window_id);
+            if(w.contains("desktopContext"))request["expectedDesktopGeneration"]=w["desktopContext"]["generation"];
             return dispatch("semantic.execute",request);
         }
         if(tool!="execute_batch")throw std::invalid_argument("Unknown tool");
@@ -264,7 +296,7 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                 if(!action.contains("text")||!action["text"].is_string())throw std::invalid_argument("text must be a string");
                 args["text"]=action["text"];op="input.type_text";
                 if(type=="fill_text") {if(control_id.is_null())throw std::invalid_argument("fill_text requires an observed control_id");op="ui.fill";args={{"windowRef",window_id},{"autoActivate",true},{"elementRef",control_id["elementRef"]},{"text",action["text"]},{"timeoutMs",3000}};}
-            } else if(type=="press_keys") {fields(action,{"type","chord"});args["keys"]=keys(requiredText(action,"chord"));op="input.key_chord";}
+            } else if(type=="press_keys") {fields(action,{"type","chord"});args["keys"]=normalize_key_chord(requiredText(action,"chord"));op="input.key_chord";}
             else if(type=="drag") {fields(action,{"type","from","to"});args.update(mappedPoint(action.at("from")));auto to=mappedPoint(action.at("to"));args["toX"]=to["x"];args["toY"]=to["y"];op="input.drag";}
             else if(type=="move") {
                 fields(action,{"type","points","hold"});
@@ -283,6 +315,7 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                 args["points"]=Json::array();for(const auto& p:points){auto mapped=mappedPoint({{"x",p[0]},{"y",p[1]}});args["points"].push_back({mapped["x"],mapped["y"]});}op="input.move";
             }
             else throw std::invalid_argument("Unknown action type: "+type);
+            if(o.window.contains("desktopContext"))args["expectedDesktopGeneration"]=o.window["desktopContext"]["generation"];
             planned.push_back({{"delay_ms",delay},{"operation",op},{"args",args},{"control_id",control_id}});
         }
         size_t completed=0,fieldsVerified=0;bool attempted=false;
@@ -294,6 +327,7 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                 if(step["delay_ms"].get<int>()>0)std::this_thread::sleep_for(std::chrono::milliseconds(step["delay_ms"].get<int>()));
                 auto w=prepareWindow(window_id);
                 if(operation_failed(w))r=w;
+                else if(!sameDesktop(o.window,w))r=sessionChanged();
                 else if(w["bounds"]!=o.window["bounds"])r=failure("geometry_changed","Window moved/resized since observation.","get_window_state");
                 else {
                     if(!step["control_id"].is_null()) {
@@ -308,6 +342,13 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
                 Json result={{"status","error"},{"code","action_failed"},{"completed",completed},{"failedIndex",completed},
                 {"dispatch",r.value("dispatch",std::string(attempted?"unknown":"not_started"))},{"error",r},
                 {"next","get_window_state; inspect failed action outcome before submitting only unfinished actions. No rollback."}};
+                if(r.value("paused",false)) {
+                    observations_.clear();result["code"]=r.value("code",std::string("desktop_paused"));
+                    result["paused"]=true;result["resumeRequiresObservation"]=true;
+                    result["remaining"]=planned.size()-completed;
+                    result["failedActionOutcome"]=r.value("dispatch",std::string("unknown"))=="not_started"?"not_started":"inspect_required";
+                    result["next"]="Restore the session and call get_window_state. Inspect the failed action's outcome, then submit only unfinished actions. No automatic replay.";
+                }
                 if(r.value("referencesInvalidated",false)) {
                     result["referencesInvalidated"]=true;result["next"]=r.at("next");
                 }
