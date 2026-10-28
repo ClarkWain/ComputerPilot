@@ -20,3 +20,7 @@
 
 /models/*
 !/models/manifest.json
+
+# Local request and desktop debug captures
+/fresh-requests.jsonl
+/tmp_desktop_debug.txt
