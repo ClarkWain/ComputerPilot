@@ -131,12 +131,16 @@ Json validate_replay(const Json& recipe) {
         {"steps",steps.size()},{"strokes",strokes.size()},{"drawnStrokes",drawCount},{"storedPoints",pointCount},
         {"coordinateSpace","canvas_relative_native_units"},{"desktopInputSent",false}};
 }
-Json run_replay(const Json& recipe,const std::string& window_id,const ReplayCall& call,const ReplayProgress& progress) {
+Json run_replay(const Json& recipe,const std::string& window_id,const ReplayCall& call,const ReplayProgress& progress,size_t start_step,size_t stop_after) {
     validate_replay(recipe);
     if(window_id.empty())throw std::invalid_argument("Replay needs a freshly discovered window_id");
+    const auto total=recipe["steps"].size();
+    if(start_step>total||(stop_after&&(stop_after<=start_step||stop_after>total)))throw std::invalid_argument("Invalid replay cursor or stop boundary");
+    size_t strokes=0;for(size_t i=0;i<start_step;++i)if(recipe["steps"][i]["type"]=="draw")strokes+=recipe["steps"][i]["strokes"].size();
     Json report={{"status","ok"},{"completedSteps",0},{"completedStrokes",0},{"steps",Json::array()},
         {"verification","business_result_not_verified"},{"automaticRetry",false}};
-    size_t index=0;bool attempted=false;
+    report["completedSteps"]=start_step;report["completedStrokes"]=strokes;report["startedAtStep"]=start_step;
+    size_t index=start_step;bool attempted=false;
     try {
         auto readState=[&](const std::string& mode) {
             Json state;
@@ -170,7 +174,8 @@ Json run_replay(const Json& recipe,const std::string& window_id,const ReplayCall
             attempted=true;auto outcome=call("execute_batch",{{"window_id",window_id},{"actions",actions}});
             verifyBatch(outcome,actions.size());return outcome;
         };
-        for(const auto& step:recipe.at("steps")) {
+        while(index<total&&(!stop_after||index<stop_after)) {
+            const auto& step=recipe["steps"][index];
             const auto type=step.at("type").get<std::string>();attempted=false;auto state=observe();Json outcome={{"status","ok"}};
             // Check the canvas before every stroke group, using the current layout.
             if(type=="wait") {
@@ -218,6 +223,8 @@ Json run_replay(const Json& recipe,const std::string& window_id,const ReplayCall
         report["finalState"]=readState("both");
         if(!report["finalState"].contains("capture")||!report["finalState"]["capture"].is_object())
             throw std::runtime_error("Replay final observation did not include a screenshot");
+        report["complete"]=index==total;
+        if(index<total){report["paused"]=true;report["pauseReason"]="requested_checkpoint";}
         return report;
     } catch(const Json& error) {
         report["error"]=error;

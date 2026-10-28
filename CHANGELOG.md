@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add explicit replay checkpoints after complete stroke groups and fresh-session resume with recipe/document hashes, exact AX document-path/save-state checks, observable-tool and canvas-pixel validation, atomic lifecycle markers and concurrent-run exclusion. Never resume uncertain or partially dispatched input from an obsolete checkpoint.
+
+- Add opt-in MCP/replay call recording and offline recipe export with fresh control selectors, Retina/crop coordinate conversion, binary-state reconstruction and incomplete/failed-session rejection. Keep raw journals out of distribution packages; allow only the hash-checked flower reference image in package validation on Windows and macOS.
+
 - Add a native `replay` CLI with complete preflight validation, fresh document creation, dynamic control/canvas resolution, color assertions and stop-with-progress behavior. Include the cleaned 12-stroke Preview flower recipe and reference image; MCP remains four tools.
 
 - Validate the macOS native and public MCP paths against a disposable Cocoa fixture, including Unicode, Command+A, pointer paths, Retina crops and sheet handling. Fix sheet-control ownership checks using AX ancestry. See docs/MACOS-VALIDATION.md for scope.

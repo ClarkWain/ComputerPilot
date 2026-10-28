@@ -44,6 +44,20 @@ with tempfile.TemporaryDirectory(prefix='dp-mac-中文-') as folder:
     original = source.read_bytes()
     bad = subprocess.run([exe, 'serve', '--input', source, '--output', source], capture_output=True)
     assert bad.returncode != 0 and source.read_bytes() == original
+    recording = folder / '录制'
+    run = subprocess.run([exe, 'serve', '--record', recording], input=wire, capture_output=True, text=True, timeout=30)
+    assert run.returncode == 0, run.stderr
+    entries = [json.loads(line) for line in (recording / 'session.jsonl').read_text().splitlines()]
+    assert entries[0] == {'event': 'session', 'schemaVersion': 1, 'source': 'desktop-pilot-calls'}
+    assert entries[-1] == {'event': 'end', 'calls': 1}
+    assert entries[1]['tool'] == 'get_window_state' and entries[2]['result']['status'] == 'error'
+    recorded = (recording / 'session.jsonl').read_bytes()
+    refusal = subprocess.run([exe, 'serve', '--record', recording], input=wire, capture_output=True, text=True, timeout=30)
+    assert refusal.returncode != 0 and (recording / 'session.jsonl').read_bytes() == recorded
+    template = root / 'examples/replays/flower-preview/replay.json'
+    for destination, journal in [(folder / 'same', folder / 'same'), (folder / 'outer', folder / 'outer/inner'), (folder / 'another/inner', folder / 'another')]:
+        refusal = subprocess.run([exe, 'replay', '--file', template, '--mode', 'run', '--output', destination, '--record', journal], capture_output=True, timeout=30)
+        assert refusal.returncode != 0 and not destination.exists() and not journal.exists()
 print('PASS macOS MCP schema, preflight, errors, ping, Unicode file transport')
 
 # Exercise the real native gate without sending input, including a capture race's

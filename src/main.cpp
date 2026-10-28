@@ -1,5 +1,6 @@
 #include <desktop_pilot/platform.hpp>
 #include <desktop_pilot/replay.hpp>
+#include <desktop_pilot/recording.hpp>
 #include <desktop_pilot/detector.hpp>
 #include <desktop_pilot/ocr.hpp>
 #include <desktop_pilot/desktop.hpp>
@@ -54,7 +55,7 @@ Json capabilities() {
 #endif
     return {{"name","DesktopPilot"},{"version",DP_PROJECT_VERSION},{"transport","cli"},{"pythonRequired",false},
         {"operations",{{"image.decode",true},{"image.fixture",true},{"vision.detect",Detector::available()},
-        {"vision.overlay",true},{"vision.ocr",Ocr::available()},{"vision.textAssociation",true},{"ui.fusion",true},{"desktop.capture",true},{"input.click",true},{"mcp",true},{"replay.validate",true},{"replay.run",replay_execution}}}};
+        {"vision.overlay",true},{"vision.ocr",Ocr::available()},{"vision.textAssociation",true},{"ui.fusion",true},{"desktop.capture",true},{"input.click",true},{"mcp",true},{"replay.validate",true},{"replay.run",replay_execution},{"replay.resume",replay_execution},{"recording.calls",true},{"recording.export",true}}}};
 }
 }
 DP_MAIN(pilot_main) {
@@ -68,17 +69,28 @@ DP_MAIN(pilot_main) {
                 "  ocr --image FILE --ocr-models DIR [--output FILE.json] [--overlay FILE.png]\n"
                 "  agent-schema (machine-readable common tool schemas)\n"
                 "  doctor (read-only desktop preflight; exit 3 when not ready)\n"
-                "  replay --file RECIPE.json [--mode validate|run] [--output NEW_DIRECTORY]\n"
-                "  serve (MCP stdio) [--input FILE.jsonl --output FILE.jsonl]\n  jsonl (native registry)\n"; return 0;
+                "  replay --file RECIPE.json [--mode validate|run] [--output NEW_DIRECTORY] [--record NEW_DIRECTORY] [--stop-after STEP]\n"
+                "  replay-resume --from RUN_DIRECTORY [--stop-after STEP]\n"
+                "  recording-export --file SESSION.jsonl --template RECIPE.json --output NEW_DIRECTORY\n"
+                "  serve (MCP stdio) [--input FILE.jsonl --output FILE.jsonl] [--record NEW_DIRECTORY]\n  jsonl (native registry)\n"; return 0;
         }
         std::wstring command=argv[1];
         if(command==L"agent-schema") {parse_options(argc,argv,{});std::cout<<dump_json(AgentApi::tools(),2)<<'\n';return 0;}
         if(command==L"replay") {
-            auto args=parse_options(argc,argv,{L"--file",L"--mode",L"--output"});
+            auto args=parse_options(argc,argv,{L"--file",L"--mode",L"--output",L"--record",L"--stop-after"});
+            if(args.contains(L"--record")&&get(args,L"--record").empty())throw std::invalid_argument("--record requires a new directory");
             auto mode=get(args,L"--mode",L"validate");
             if(mode!=L"validate"&&mode!=L"run")throw std::invalid_argument("Replay mode must be validate or run");
-            if(mode==L"validate"&&args.contains(L"--output"))throw std::invalid_argument("--output is only valid for replay --mode run");
-            return replay_cli(required(args,L"--file"),Path(get(args,L"--output")),mode==L"run");
+            if(mode==L"validate"&&(args.contains(L"--output")||args.contains(L"--record")||args.contains(L"--stop-after")))throw std::invalid_argument("--output/--record/--stop-after require replay --mode run");
+            return replay_cli(required(args,L"--file"),Path(get(args,L"--output")),mode==L"run",Path(get(args,L"--record")),args.contains(L"--stop-after")?integer(args,L"--stop-after",0,1,512):0);
+        }
+        if(command==L"replay-resume") {
+            auto args=parse_options(argc,argv,{L"--from",L"--stop-after"});
+            return replay_resume_cli(required(args,L"--from"),args.contains(L"--stop-after")?integer(args,L"--stop-after",0,1,512):0);
+        }
+        if(command==L"recording-export") {
+            auto args=parse_options(argc,argv,{L"--file",L"--template",L"--output"});
+            return recording_export_cli(required(args,L"--file"),required(args,L"--template"),required(args,L"--output"));
         }
         if(command==L"doctor") {
             parse_options(argc,argv,{});
@@ -88,7 +100,8 @@ DP_MAIN(pilot_main) {
             return result.value("ready",false)?0:3;
         }
         if(command==L"serve" || command==L"jsonl") {
-            auto args=parse_options(argc,argv,{L"--input",L"--output"});
+            auto args=parse_options(argc,argv,command==L"serve"?std::set<std::wstring>{L"--input",L"--output",L"--record"}:std::set<std::wstring>{L"--input",L"--output"});
+            if(args.contains(L"--record")&&get(args,L"--record").empty())throw std::invalid_argument("--record requires a new directory");
             std::ifstream input;
             std::ofstream output;
             auto in=get(args,L"--input"), out=get(args,L"--output");
@@ -102,7 +115,7 @@ DP_MAIN(pilot_main) {
             struct Restore { std::streambuf *in,*out; ~Restore(){std::cin.rdbuf(in);std::cout.rdbuf(out);} } restore{oldIn,oldOut};
             if(input.is_open()) std::cin.rdbuf(input.rdbuf());
             if(output.is_open()) std::cout.rdbuf(output.rdbuf());
-            return serve(command==L"serve");
+            return serve(command==L"serve",Path(get(args,L"--record")));
         }
         if(command==L"capabilities") {parse_options(argc,argv,{});std::cout<<dump_json(capabilities(),2)<<'\n';return 0;}
         if(command==L"fixture") {

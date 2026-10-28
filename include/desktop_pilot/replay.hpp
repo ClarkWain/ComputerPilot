@@ -9,6 +9,8 @@ using ReplayProgress=std::function<void(const Json&)>;
 Json validate_replay(const Json& recipe);
 // The caller must first discover a fresh target in the same AgentApi session.
 Json run_replay(const Json& recipe,const std::string& window_id,const ReplayCall& call,
-                const ReplayProgress& progress={});
-int replay_cli(const std::filesystem::path& file,const std::filesystem::path& output,bool execute);
+                const ReplayProgress& progress={},size_t start_step=0,size_t stop_after=0);
+int replay_cli(const std::filesystem::path& file,const std::filesystem::path& output,bool execute,
+               const std::filesystem::path& recording_directory={},size_t stop_after=0);
+int replay_resume_cli(const std::filesystem::path& run_directory,size_t stop_after=0);
 }

@@ -5,6 +5,7 @@
 #include <desktop_pilot/worker.hpp>
 #include <desktop_pilot/preflight.hpp>
 #include <desktop_pilot/agent_api.hpp>
+#include <desktop_pilot/recording.hpp>
 #include <iostream>
 #include <fstream>
 #include <map>
@@ -42,7 +43,12 @@ Json call(AgentApi& agent,const Dispatch& dispatch,const std::string& name,const
     checkCancelled();return agent.call(name,args,dispatch);
 }
 } // namespace
-int serve(bool mcp) {
+int serve(bool mcp,const std::filesystem::path& recording_directory) {
+    std::unique_ptr<ActionRecording> recording;
+    if(!recording_directory.empty()) {
+        if(!mcp)throw std::invalid_argument("Recording requires the four-tool MCP transport");
+        recording=std::make_unique<ActionRecording>(recording_directory);
+    }
     AgentApi agent;
     std::unique_ptr<Service> local;
     std::unique_ptr<Worker> worker;
@@ -90,7 +96,9 @@ int serve(bool mcp) {
             auto access=desktop_operation_access(op,requestEnvironment);
             if(!access.empty())return access;
         }
-        return mcp ? worker->execute(op, args) : local->execute(op, args);
+        auto value=mcp ? worker->execute(op, args) : local->execute(op, args);
+        if(recording)recording->observe_window(op,value);
+        return value;
     };
     auto emit = [&](const Json &response) {
         std::lock_guard lock(output_mutex);
@@ -220,7 +228,9 @@ int serve(bool mcp) {
                                     {"error", {{"code", -32602}, {"message", "Unknown tool"}}}};
                     } else {
                         try {
-                            auto value = call(agent, dispatch, name, params.value("arguments", Json::object()), checkCancelled);
+                            const auto arguments=params.value("arguments", Json::object());
+                            auto invoke=[&](const std::string& tool,const Json& args){return call(agent,dispatch,tool,args,checkCancelled);};
+                            auto value=recording?recording->call(name,arguments,invoke):invoke(name,arguments);
                             result = {
                                 {"content", Json::array({{{"type", "text"}, {"text", dump_json(value)}}})},
                                 {"structuredContent", value},
@@ -269,6 +279,7 @@ int serve(bool mcp) {
         }
     }
     reader.join();
+    if(recording)recording->finish();
     return 0;
 }
 } // namespace dp

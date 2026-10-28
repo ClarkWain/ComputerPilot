@@ -27,6 +27,20 @@
 
 输出包括新 PNG、配方副本、`progress.json`、`report.json` 和最终窗口截图 `final-window.png`。报告的 `actions_completed` 只表示动作完成，需要查看图片验收视觉结果。中途失败或锁屏立即停止，不自动重试、不自动恢复；已产生的笔画不回滚。保留新画布并检查报告，不整批重复执行到同一文档。
 
+## 分段执行
+
+可在完整笔画组后暂停，并在同一文档上继续：
+
+```sh
+./build/core/desktop-pilot replay \
+  --file examples/replays/flower-preview/replay.json \
+  --mode run --output out/split-flower --stop-after 14
+./build/core/desktop-pilot replay-resume --from out/split-flower --stop-after 20
+./build/core/desktop-pilot replay-resume --from out/split-flower
+```
+
+这三个阶段分别累计完成 3、11、12 条笔画。保持文档打开及工具、笔宽、选区现场；文件和可观察状态不匹配时拒绝续跑，完成的运行也不能再次续跑。未知/部分执行的失败不能强行跳过。检查点和报告说明见 [Replay](../../../docs/REPLAY.md#检查点暂停与续跑)。
+
 ## 当前适配条件
 
 - macOS 原生后端，中文“预览”（bundle ID `com.apple.Preview`，可执行文件 `Preview`）。

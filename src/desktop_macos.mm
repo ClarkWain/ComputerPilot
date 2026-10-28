@@ -223,6 +223,25 @@ struct Desktop::Impl {
         if(!desktop.value("ready",false)){result["metadataOnly"]=true;return result;}
         if(AXIsProcessTrusted())try {
             auto ax=axwindow(w);result["minimized"]=boolean(ax.get(),kAXMinimizedAttribute);result["foreground"]=focused(w);
+            auto document=attribute(ax.get(),kAXDocumentAttribute);
+            NSURL* documentURL=nil;
+            if(document.value&&CFGetTypeID(document)==CFURLGetTypeID())documentURL=(__bridge NSURL*)document.value;
+            else if(document.value&&CFGetTypeID(document)==CFStringGetTypeID()) {
+                NSString* value=(__bridge NSString*)document.value;
+                documentURL=value.isAbsolutePath?[NSURL fileURLWithPath:value]:[NSURL URLWithString:value];
+            }
+            if(documentURL.isFileURL)result["documentPath"]=str(documentURL.path);
+            auto readEdited=[&](AXUIElementRef element,const char* source) {
+                auto edited=attribute(element,kAXEditedAttribute);
+                if(edited.value&&CFGetTypeID(edited)==CFBooleanGetTypeID())result["documentEdited"]=bool(CFBooleanGetValue((CFBooleanRef)edited.value));
+                else if(edited.value&&CFGetTypeID(edited)==CFNumberGetTypeID()){int dirty=0;CFNumberGetValue((CFNumberRef)edited.value,kCFNumberIntType,&dirty);result["documentEdited"]=dirty!=0;}
+                if(result.contains("documentEdited"))result["documentEditedSource"]=source;
+            };
+            readEdited(ax.get(),"window");
+            if(!result.contains("documentEdited")) {
+                auto close=attribute(ax.get(),kAXCloseButtonAttribute);
+                if(close.value&&CFGetTypeID(close)==AXUIElementGetTypeID())readEdited((AXUIElementRef)close.value,"closeButton");
+            }
             if(blocker) {
                 auto children=attribute(ax.get(),kAXChildrenAttribute);AX sheet;
                 if(children.value&&CFGetTypeID(children)==CFArrayGetTypeID())for(id child in (__bridge NSArray*)children.value) {

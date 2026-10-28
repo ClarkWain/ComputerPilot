@@ -16,5 +16,5 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
-int serve(bool mcp);
+int serve(bool mcp,const std::filesystem::path& recording_directory={});
 }

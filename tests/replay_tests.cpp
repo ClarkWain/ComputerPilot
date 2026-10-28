@@ -89,6 +89,13 @@ int main(int argc,char** argv) {
         });
         require(result["status"]=="ok"&&waits==3&&writes==0,"wait sent input instead of waiting for fresh controls");
         bad=waiting;bad["steps"][0]["timeoutMs"]=10001;invalid(bad);
+        writes=0;result=run_replay(recipe,"pause-window",call,{},0,3);
+        require(result["status"]=="ok"&&result["paused"]==true&&result["complete"]==false&&result["completedSteps"]==3&&result["completedStrokes"]==2&&writes==1,"explicit stop executed beyond a completed stroke group");
+        writes=0;result=run_replay(recipe,"resumed-window",call,{},3);
+        require(result["status"]=="ok"&&result["complete"]==true&&result["completedStrokes"]==2&&writes==1&&last["actions"][0]["type"]=="press_keys"&&result["steps"][0]["index"]==3,"resume redrew a completed prefix");
+        int cursorCalls=0;bool cursorRejected=false;
+        try{run_replay(recipe,"x",[&](const std::string&,const Json&){++cursorCalls;return Json::object();},{},99);}catch(...){cursorRejected=true;}
+        require(cursorRejected&&cursorCalls==0,"invalid replay cursor accessed the desktop");
         std::cout<<"PASS replay checks="<<checks<<'\n';return 0;
     } catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

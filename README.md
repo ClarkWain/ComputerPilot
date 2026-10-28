@@ -36,6 +36,12 @@ ctest --preset core-only -LE interactive
 
 输出目录必须不存在；锁屏或中途失败即停止，不自动重试或续跑。见 [小花示例](examples/replays/flower-preview/README.md) 与 [Replay 格式](docs/REPLAY.md)。MCP 工具数量保持四个。
 
+需要分段执行时，可在 `--mode run` 中添加 `--stop-after 14`，在完整笔画组后保存检查点；之后用 `replay-resume --from out/my-flower-replay`，核对原文档、文件完整性、工具状态与画布像素后只执行剩余步骤。保留原窗口和工具现场；异常/未知结果不会被自动补画。详见 [检查点与续跑](docs/REPLAY.md#检查点暂停与续跑)。
+
+## 操作录制
+
+通过 `serve --record 新目录` 显式录制 DesktopPilot 的工具调用，或在实际 `replay --mode run` 时添加 `--record 新目录`。录制文件可用 `recording-export --file session.jsonl --template 配方.json --output 新目录` 离线生成新配方；重新定位控件和画布，不复制模板笔画。当前支持 macOS PNG 绘图的点击、二态控件、按键和连续左键笔画。完整流程与拒绝条件见 [操作录制](docs/RECORDING.md)；不监听用户的全局手动输入。
+
 ## 四个工具
 
 | 工具 | 用途 |

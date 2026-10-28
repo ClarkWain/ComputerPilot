@@ -73,6 +73,9 @@ jobs:
         run: |
           cmake -DDP_BINARY_DIR=build/core -DDP_PACKAGE_DIR=out/dist/DesktopPilot-macos -P cmake/package.cmake
           ./out/dist/DesktopPilot-macos/bin/desktop-pilot capabilities
+      - name: Check macOS package
+        shell: pwsh
+        run: ./scripts/check-package.ps1 -Path out/dist/DesktopPilot-macos
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: DesktopPilot-macos-core
