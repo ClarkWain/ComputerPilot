@@ -37,9 +37,23 @@ flowchart LR
 
 ## 语义执行：用动作表达意图
 
-在已适配的应用中，Agent 可以直接表达“画一个圆”“设置颜色”“输入文字”等操作，由 profile 将动作转换成当前界面的实际交互。
+**一个高级语义动作，封装多个基础操作。** Agent 给出目标、位置与样式，本地执行器负责选工具、处理弹窗、设置参数与连续输入。
 
-例如，对已匹配经典中文版 Paint profile 的窗口，使用 `execute_semantic` 一次提交两个圆：
+### 画一个圆，省去逐步选工具、调颜色和拖绘
+
+![一个 drawing.drawCircle 语义动作封装选椭圆工具、设置轮廓填充、填写 RGB、设置线宽、拖绘和提交形状](docs/media/semantic-circle.png)
+
+### 写一段文字，直接给内容与位置
+
+![一个 drawing.drawText 语义动作封装选文字工具、设色、拖出文字框、输入内容和提交](docs/media/semantic-text.png)
+
+### 另存 PNG，把对话框操作与文件校验一起交给执行器
+
+![一个 document.saveAs 语义动作封装另存对话框、文件名定位与填写、回读、保存和 PNG 解码验证](docs/media/semantic-save.png)
+
+以上是**已实现的经典中文版 Paint profile 的流程示意**，具体内部步骤随当前状态变化。一次语义动作仍会执行必要的底层交互；节省的是 Agent 逐步描述、反复定位和等待模型判断的开销。绘图与文字完成后仍需截图验收。
+
+还可以把多个语义动作放进一次 `execute_semantic` 调用。例如，在已匹配该 profile 的窗口中一次提交两个圆：
 
 ```json
 {
@@ -79,9 +93,13 @@ profile 根据实际应用、版本、DPI、布局和控件证据匹配。没有
 
 ### 一个可运行的小花示例
 
-在 macOS 中文“预览”中新建空白画布，通过真实标注画笔绘制八瓣小花：
+**运行一份配方，看空白画布自己开花。**
 
-<img src="examples/replays/flower-preview/reference.png" alt="DesktopPilot 在 macOS 预览中绘制并通过 Replay 重画的小花" width="360">
+下面是在 macOS 中文“预览”中**实际执行 Replay 的窗口录屏**：本地执行器重新定位工具、切换颜色，用 12 条真实画笔路径画出八瓣小花。
+
+<img src="docs/media/flower-replay.gif" alt="真实 Replay 录屏：macOS 预览中的空白画布依次出现花茎、叶子、粉色花瓣和黄色花心" width="800">
+
+GIF 为 **4 倍速**循环播放，末帧停留 2 秒；由真实窗口视频转换，未用参考图片合成绘制过程。[观看原速视频](docs/media/flower-replay.mp4) · [查看最终参考图](examples/replays/flower-preview/reference.png) · [素材制作说明](examples/readme-media/README.md)
 
 ```sh
 # 校验配方，不操作桌面
