@@ -1,129 +1,208 @@
 # DesktopPilot
 
-DesktopPilot 是供 AI Agent 使用的 Windows / macOS 桌面操作程序，使用 C++20 / CMake 开发。Agent 读取窗口、控件和截图，提出操作意图；DesktopPilot 负责定位控件、恢复窗口焦点并执行。运行不需要 Node 或 Python。
+## Computer Use，进阶到语义执行与可复用工作流。
 
-核心能力是**应用语义操作**：例如 Agent 提交“画一个红色圆”，程序根据适合当前应用的 profile 完成选工具、设置填充、输入 RGB、绘制和提交。没有匹配 profile 时，仍可使用点击、文本输入、按键、拖动和连续鼠标路径。
+**更省上下文，更少交互往返，更快完成重复任务。**
 
-## macOS
+DesktopPilot 是面向 AI Agent 的桌面执行层。它把窗口观察、语义操作、批量执行与 Replay 连接起来，让 Agent 用结构化动作表达意图，由本地执行器完成控件定位、工具切换、样式设置和连续输入，再将成功流程沉淀成可复用的任务配方。
 
-新增 macOS 14+ 原生通用后端：窗口枚举、Accessibility 控件读取与填写、ScreenCaptureKit 截图、键鼠输入和权限诊断，保持相同四工具 MCP 接口。macOS 暂不新增 Paint/Aseprite profile。锁屏时降级为后台诊断，界面批次暂停；解锁后须重新观察再继续，不自动重放。
+原生核心支持 **Windows / macOS**，通过 **MCP** 接入 Agent；通用任务编排在独立开发分支中持续演进。
 
-```sh
-cmake --preset core-only
-cmake --build --preset core-only --parallel 4
-ctest --preset core-only -LE interactive
-./build/core/desktop-pilot doctor
-```
+[![Build](https://github.com/ClarkWain/DesktopPilot/actions/workflows/build.yml/badge.svg)](https://github.com/ClarkWain/DesktopPilot/actions/workflows/build.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-运行前需在系统隐私设置授予实际启动器/程序「辅助功能」和「屏幕录制」权限；`ready:false` 时按诊断修正后重连。macOS 构建、MCP 配置、点坐标与 Retina 截图说明见 [macOS 接入](docs/MACOS.md)。下文 Paint 适配和 Windows 会话说明仅适用于 Windows 后端。
+[快速接入](docs/MCP.md) · [语义动作](docs/SEMANTIC-PROFILES.md) · [Replay](docs/REPLAY.md) · [编排预览](https://github.com/ClarkWain/DesktopPilot/tree/refactor/node-orchestration) · [发行版本](https://github.com/ClarkWain/DesktopPilot/releases)
 
-## v0.5.0 更新与升级
+## 为什么用 DesktopPilot
 
-本版保留四工具 MCP 接口，强化 UIA 超时与 profile 证据处理，新增现代中文版 Paint 适配和受限的 Aseprite 热键/点击 profile。下载 [v0.5.0](https://github.com/ClarkWain/DesktopPilot/releases/tag/v0.5.0)，或按下方步骤从源码构建。
+Computer Use 的一部分开销，来自模型反复观察界面、决定下一次点击，再等待下一轮反馈。DesktopPilot 将适合本地确定执行的操作组织成更大的执行单元，把模型参与集中在任务规划、关键判断与结果验收上。
 
-从 v0.4.0 升级时，MCP 工具名称保持不变；重启服务以使用新版程序和 profile。Aseprite 的固定坐标保存动作已移除；核心发行包不含 OCR，因此不会显示 OCR 菜单动作。
+适合桌面表单录入、重复编辑、适配应用的绘图，以及由 Agent 驱动的多步骤桌面任务，尤其适合界面稳定、操作重复、结果可以检查的场景。
 
-动作执行完成不代表画面正确。逐图形像素抽样方案已撤销；Agent 在批次后查看截图验收。小尺寸原生多边形仍有已知问题，实验中的扫描线绘法尚未集成为自动语义后端。完整变更见 [CHANGELOG](CHANGELOG.md)，验证范围见 [验证记录](docs/OPTIMIZATION-VALIDATION.md)。
-
-## 小花 Replay
-
-新增原生 CLI 动作回放入口，默认只校验；实际执行会新建空白 PNG 并在 macOS 中文“预览”里重画小花，不复用旧窗口/控件 ID，不覆盖原图。
-
-```sh
-./build/core/desktop-pilot replay --file examples/replays/flower-preview/replay.json
-./build/core/desktop-pilot replay --file examples/replays/flower-preview/replay.json --mode run --output out/my-flower-replay
-```
-
-输出目录必须不存在；锁屏或中途失败即停止，不自动重试或续跑。见 [小花示例](examples/replays/flower-preview/README.md) 与 [Replay 格式](docs/REPLAY.md)。MCP 工具数量保持四个。
-
-需要分段执行时，可在 `--mode run` 中添加 `--stop-after 14`，在完整笔画组后保存检查点；之后用 `replay-resume --from out/my-flower-replay`，核对原文档、文件完整性、工具状态与画布像素后只执行剩余步骤。保留原窗口和工具现场；异常/未知结果不会被自动补画。详见 [检查点与续跑](docs/REPLAY.md#检查点暂停与续跑)。
-
-## 操作录制
-
-通过 `serve --record 新目录` 显式录制 DesktopPilot 的工具调用，或在实际 `replay --mode run` 时添加 `--record 新目录`。录制文件可用 `recording-export --file session.jsonl --template 配方.json --output 新目录` 离线生成新配方；重新定位控件和画布，不复制模板笔画。当前支持 macOS PNG 绘图的点击、二态控件、按键和连续左键笔画。完整流程与拒绝条件见 [操作录制](docs/RECORDING.md)；不监听用户的全局手动输入。
-
-## 四个工具
-
-| 工具 | 用途 |
+| 你关心的价值 | DesktopPilot 如何实现 |
 |---|---|
-| `list_windows` | 无参数列出全部窗口，Agent 根据标题/PID 辨认 `window_id` |
-| `get_window_state` | 获取控件、截图，以及当前窗口匹配的 profile 和语义动作示例 |
-| `execute_semantic` | 使用匹配的 profile 执行一项或一批应用语义动作 |
-| `execute_batch` | 执行一项或一批基础键鼠、文本操作 |
+| **更省** | 优先读取结构化控件，按需获取截图与局部细节；通过语义动作和批次减少重复上下文与模型往返 |
+| **更快** | 在本地连续执行选工具、设置样式和绘制等动作；同批次复用已确认的定位与设置 |
+| **更容易复用** | 将实际执行的流程录制、导出为 Replay 配方，适配条件一致时重复运行，减少重新规划 |
+| **更容易交付** | 保留执行进度、证据与检查点，在核对原文档和现场状态后继续剩余步骤 |
 
-**连接并判断环境 → 确定目标窗口 → 获取状态 → 选择合适的执行方式 → 获取新状态验收。**
-
-不需要 Agent 维护状态编号或在每个动作前激活窗口，但仍须读取环境检查结果、确认目标和处理失败。程序启动和执行时检查桌面环境，执行输入时恢复目标焦点；被模态对话框阻挡时返回对话框信息。批次失败立即停止，不自动重放已完成动作。
-
-## 快速开始
-
-Windows x64 Release 解压后使用 `bin/desktop-pilot.exe`，需要 Microsoft Visual C++ 2015–2022 x64 Runtime。源码构建：
-
-```powershell
-cmake --preset core-only
-cmake --build --preset core-only --parallel 4
-pwsh -NoProfile -File examples/onboarding/start.ps1 -Task check
-pwsh -NoProfile -File examples/onboarding/start.ps1 -Task form
+```mermaid
+flowchart LR
+    A["Agent 规划任务"] --> B["观察窗口与控件"]
+    B --> C["语义动作 / 结构化批次"]
+    C --> D["原生桌面执行"]
+    D --> E["结果验收"]
+    E --> F["录制与 Replay 复用"]
 ```
 
-`form` 创建自己的测试窗口，填写字段、点击 Apply 并核验结果，结束后关闭测试窗口。
+## 语义执行：用动作表达意图
 
-**DesktopPilot 必须与目标软件在同一个 Windows 用户会话和输入桌面中运行。** 隔离桌面、锁屏或受限令牌可能使输入不可用。服务会返回原因和修复提示；同名桌面或截图成功不能证明输入可用。
+在已适配的应用中，Agent 可以直接表达“画一个圆”“设置颜色”“输入文字”等操作，由 profile 将动作转换成当前界面的实际交互。
 
-在 MCP 客户端中配置真实程序路径：
-
-```json
-{"mcpServers":{"desktop-pilot":{"command":"C:/实际安装目录/bin/desktop-pilot.exe","args":["serve"]}}}
-```
-
-若 Agent 没有 MCP 接口，可以复用仓库附带的持久 PowerShell 客户端，见 [完整接入示例](docs/MCP.md)。安装或更新 Agent skill：
-
-```powershell
-pwsh -NoProfile -File skills/desktoppilot/scripts/install.ps1 -Update
-```
-
-安装 skill 不会自动注册 MCP。程序更新后重连服务，让客户端刷新工具列表。
-
-## 语义操作：根据实际窗口选 profile
-
-先调用 `get_window_state`，读取 `semantic.profiles`。只有匹配当前进程、窗口类、DPI、布局和关键控件的 profile 才出现在可用列表中。唯一匹配时可省略 `profile`；有多个时选择其中一个；没有匹配时先根据原因修正可恢复的窗口/缩放条件并重新观察，检查失败或无法适配时，用 `mode:image` 获取新截图并使用 `execute_batch`。显式传入 profile 也不能跳过匹配检查。
-
-例如，在返回了经典中文版 Paint profile 的窗口内画两个圆：
+例如，对已匹配经典中文版 Paint profile 的窗口，使用 `execute_semantic` 一次提交两个圆：
 
 ```json
 {
-  "window_id":"从窗口列表返回的值",
-  "actions":[
-    {"action":"drawing.drawCircle","args":{"center":[80,80],"radius":24,"fill":[255,0,0],"stroke":{"color":[30,30,30],"width":1}}},
-    {"action":"drawing.drawCircle","args":{"center":[150,80],"radius":24}}
+  "window_id": "list_windows 返回的窗口 ID",
+  "actions": [
+    {
+      "action": "drawing.drawCircle",
+      "args": {
+        "center": [80, 80],
+        "radius": 24,
+        "fill": [236, 95, 140],
+        "stroke": {"color": [30, 30, 30], "width": 1}
+      }
+    },
+    {
+      "action": "drawing.drawCircle",
+      "args": {"center": [150, 80], "radius": 24}
+    }
   ]
 }
 ```
 
-以上是 `execute_semantic` 的参数。第二个圆不重复指定样式，沿用工具当前设置；同批次也会复用已经确认的控件定位。Agent 不必逐个点击颜色菜单或填写 RGB 输入框。
+执行器完成选工具、设色、设置线宽与绘制；第二个圆沿用当前样式。同一批次中可以复用已确认的控件与设置，减少重复查询和切换。
 
-## 能力与边界
+profile 根据实际应用、版本、DPI、布局和控件证据匹配。没有适用 profile 时，Agent 仍可通过 `execute_batch` 使用控件点击、文本输入、按键、拖动和连续鼠标路径。
 
-- 截图按需返回，整窗最长边 1600，默认 PNG（对模型宿主兼容性最好）；基础操作自动转换截图坐标，局部检查使用无损截图。确认宿主支持 WebP 时配置 `DP_IMAGE_FORMAT=webp` 以减少字节。
-- Paint 的密集多边形会在最多一画布像素误差内去除冗余顶点并选择较长起始边。小多边形仍有部分绘制失败的已知案例，不能用于严格逐像素复刻。执行器报告动作执行情况；整批完成后由 Agent 查看截图，判断绘制结果和质量。
-- 单击 control_id 时优先调用控件的 Invoke 能力；不支持才使用前台指针。仍需前台输入的路径自动恢复焦点，但不承诺任意后台绘图。模态弹窗和持续遮挡返回具体阻塞，不盲目重放。
-- 内部 `app.launch` 对新建且唯一匹配 profile 的窗口应用 recommendedWindow 尺寸，并限制在工作区内；已有窗口观察时不自动调整。
+[查看语义动作与适配机制 →](docs/SEMANTIC-PROFILES.md)
 
-- **经典简体中文 Paint**支持图形、文字、刷子选择和 PNG 另存；**现代中文 Paint**仅适配已验证的 11.2605.81.0、120 DPI、100% 缩放条件，支持选笔、RGB/笔宽、连续路径和填充。两者都不代表兼容所有 Paint 版本。
-- **Aseprite v1.2.15 英文界面**在 120 DPI 下提供 stock 热键选工具/缩放与通用窗口点击；OCR 菜单动作仅在 OCR 构建并配置模型时开放。没有像素绘图或保存语义。其他应用使用基础操作。
-- 语义匹配不等于成品验收。绘图派发成功不保证像素级尺寸或美术质量，提交按钮点成功也不代表网站任务完成。
-- 核心版不含 AI 模型；视觉解析是可选构建能力，发行包不附带模型权重。
-- 对外 MCP 只有上述四个工具，旧工具名不保留别名。底层原生 JSONL 协议供开发调试使用，日常 Agent 无需学习。
+## Replay 与录制：把成功流程留下来
 
-## 文档
+将一次验证过的执行变成配方，后续运行由本地执行器重新观察、定位并执行，减少模型逐步重新规划的需求。
 
-- [Agent Skill：用途、通讯、完整任务与故障处理](skills/desktoppilot/SKILL.md)
-- [MCP 接入与调用示例](docs/MCP.md)
-- [工具参数参考（由程序生成）](docs/AGENT-API.md)
-- [可运行入门示例](examples/onboarding/README.md)
-- [语义 profile 适配](docs/SEMANTIC-PROFILES.md)
-- [构建](docs/BUILDING.md)、[开发协议](docs/PROTOCOL.md)、[底层操作](OPERATIONS.md)
+- **显式录制**：通过 `serve --record 新目录`，记录 DesktopPilot 实际执行的工具调用。
+- **离线导出**：从调用日志生成可检查的 Replay 配方，重新构建定位条件与笔画，移除旧会话引用。
+- **重新定位**：执行时获取新控件状态，以当前画布原点映射笔画，处理截图与 Retina 坐标转换。
+- **分段执行**：在完整笔画组后保存检查点，核对文件、工具状态和画布像素后，只继续剩余步骤。
+
+### 一个可运行的小花示例
+
+在 macOS 中文“预览”中新建空白画布，通过真实标注画笔绘制八瓣小花：
+
+<img src="examples/replays/flower-preview/reference.png" alt="DesktopPilot 在 macOS 预览中绘制并通过 Replay 重画的小花" width="360">
+
+```sh
+# 校验配方，不操作桌面
+./build/core/desktop-pilot replay \
+  --file examples/replays/flower-preview/replay.json
+
+# 新建画布并执行；输出目录须不存在
+./build/core/desktop-pilot replay \
+  --file examples/replays/flower-preview/replay.json \
+  --mode run --output out/my-flower-replay
+```
+
+也可以先画花茎和叶子，稍后继续花瓣与花心：
+
+```sh
+./build/core/desktop-pilot replay \
+  --file examples/replays/flower-preview/replay.json \
+  --mode run --output out/split-flower --stop-after 14
+./build/core/desktop-pilot replay-resume --from out/split-flower --stop-after 20
+./build/core/desktop-pilot replay-resume --from out/split-flower
+```
+
+当前原生 Replay 执行、录制导出与检查点续跑，以 **macOS PNG 绘图**为首个落地场景。录制对象是 DesktopPilot 调用；暂停后需保留原文档与工具现场，输入结果未知时停止并等待核对。
+
+[小花示例](examples/replays/flower-preview/README.md) · [录制与导出](docs/RECORDING.md) · [Replay 与检查点](docs/REPLAY.md)
+
+## 任务编排：从一段操作走向一批任务
+
+主分支已经可以通过语义批次和 Replay 的等待、断言、状态设置与绘制步骤，组织固定的桌面执行流程。
+
+在此基础上，**`refactor/node-orchestration` 开发分支**提供更高层的编排预览：
+
+- 用可信 JavaScript 的条件、循环和函数组织多步骤任务。
+- 在多个窗口间组合观察、语义动作与基础输入，检查执行前后的条件。
+- 按项目记录状态、结果和业务检查点，支持人工选择、暂停与取消。
+- 恢复时复用已提交结果，遇到未决写入先核对，减少重复执行。
+
+其中，专用文件 Workflow 已完成 Aseprite CLI 单帧素材批量导出的实测；通用跨应用 GUI 编排仍处于开发验证阶段。**这套 Node 编排入口尚未合并到当前原生主分支。**
+
+[通用编排指南](https://github.com/ClarkWain/DesktopPilot/blob/refactor/node-orchestration/docs/guides/ORCHESTRATION.md) · [文件批处理 Workflow](https://github.com/ClarkWain/DesktopPilot/blob/refactor/node-orchestration/docs/guides/WORKFLOW.md) · [验收记录](https://github.com/ClarkWain/DesktopPilot/blob/refactor/node-orchestration/docs/validation/WORKFLOW-ACCEPTANCE.md)
+
+## 已验证的结果
+
+| 样例 | 已记录的结果 | 证据 |
+|---|---|---|
+| 同一测试窗口的截图传输 | 1600×1244 预览由 PNG 的 171,622 字节降至 WebP 的 60,894 字节，减少 **64.5%** | [截图验证](docs/OPTIMIZATION-VALIDATION.md) |
+| macOS 小花 Replay | **27 步、12 条笔画**完整执行，约 79 秒；保存 PNG 与参考图 RGB 像素一致 | [Replay 验收](examples/replays/flower-preview/README.md) |
+| macOS 分段续跑 | **14 → 20 → 27 步**，累计 3 → 11 → 12 笔；已完成前缀未重画，最终像素一致 | [检查点验收](docs/REPLAY.md) |
+| 开发分支的 Aseprite 文件批处理 | **24/24** 单帧输出与已知参考 RGBA 一致，源文件摘要不变 | [Workflow 验收](https://github.com/ClarkWain/DesktopPilot/blob/refactor/node-orchestration/docs/validation/WORKFLOW-ACCEPTANCE.md) |
+
+这些数据对应记录中的特定环境和任务。传输字节减少与模型计费分开看：目前没有统一账单对照来量化 token 或费用节省比例，也没有跨产品的通用提速倍数。
+
+## 快速开始
+
+本 README 介绍 `main` 源码中的能力。使用 macOS、原生录制与检查点等新功能，请从主分支构建；已发布的 [Windows v0.5.0](https://github.com/ClarkWain/DesktopPilot/releases/tag/v0.5.0) 以其发布说明为准。
+
+源码构建需要 CMake 3.29+；Windows 使用 Visual Studio 2022，macOS 14+ 使用 Xcode Command Line Tools。**原生核心运行无需 Node 或 Python**，可选视觉模型单独配置。
+
+构建测试与入门脚本分别使用 Python 3 或 PowerShell，具体依赖见[构建指南](docs/BUILDING.md)。
+
+```sh
+git clone https://github.com/ClarkWain/DesktopPilot.git
+cd DesktopPilot
+cmake --preset core-only
+cmake --build --preset core-only --parallel 4
+ctest --preset core-only -LE interactive
+```
+
+在 MCP 客户端中配置程序路径，例如 macOS 源码构建：
+
+```json
+{
+  "mcpServers": {
+    "desktop-pilot": {
+      "command": "/absolute/path/DesktopPilot/build/core/desktop-pilot",
+      "args": ["serve"]
+    }
+  }
+}
+```
+
+Windows 发行包使用 `bin/desktop-pilot.exe`；Visual Studio 源码构建使用 `build/core/Release/desktop-pilot.exe`。Windows 发行包需要 Microsoft Visual C++ 2015–2022 x64 Runtime。macOS 需为实际执行程序或宿主授予辅助功能与屏幕录制权限。
+
+执行器需与目标应用处于同一可交互用户会话。启动预检返回 `ready:false` 时，先按诊断修正环境；锁屏时暂停界面输入。
+
+[完整 MCP 接入](docs/MCP.md) · [macOS 接入](docs/MACOS.md) · [构建指南](docs/BUILDING.md) · [入门示例](examples/onboarding/README.md)
+
+## 四个工具，覆盖核心执行流程
+
+| MCP 工具 | 用途 |
+|---|---|
+| `list_windows` | 发现窗口，确定目标应用 |
+| `get_window_state` | 读取控件、截图及当前可用的语义 profile |
+| `execute_semantic` | 执行已匹配 profile 的语义动作 |
+| `execute_batch` | 批量执行基础键鼠与文本操作 |
+
+程序管理焦点恢复、会话检查、坐标转换和会话内引用；Agent 负责目标选择、关键判断和最终验收。Replay、录制与编排通过各自 CLI 提供，保持四工具 MCP 接口。
+
+## 平台与适配范围
+
+| 能力 | 当前范围 |
+|---|---|
+| 原生桌面执行 | Windows x64 与 macOS 14+ 的窗口、控件、截图和输入；模型权重为可选依赖 |
+| Paint 语义 | 经典中文版：绘图、文字和 PNG 另存；现代中文版 11.2605.81.0、120 DPI/100% 缩放：连续路径、颜色、笔宽与填充，需匹配布局 |
+| Aseprite 语义 | Windows v1.2.15 英文界面、120 DPI 下的热键选工具、缩放与通用点击；OCR 菜单依赖可选 OCR 构建 |
+| macOS 应用语义 | 当前使用通用控件和基础输入，尚未新增 Paint/Aseprite profile |
+| 原生录制与 Replay | 记录 DesktopPilot 调用；配方执行、导出和检查点续跑当前面向 macOS PNG 绘图；Windows 可校验配方 |
+| 通用编排 | 独立 Node 开发分支预览，当前 Windows 宿主；通用 GUI 业务验收仍在推进 |
+
+应用适配以现场返回的 profile 和动作目录为准。Aseprite 当前主分支没有保存或像素绘图语义；绘图质量与业务结果需要验收。长任务遇到未知输入结果时停止，当前不提供锁屏应用写入、半条笔画恢复或任意应用自动适配的保证。
+
+## 继续了解
+
+- [Agent Skill](skills/desktoppilot/SKILL.md)：任务流程、接入与故障处理。
+- [API 参考](docs/AGENT-API.md)：由程序生成的四工具参数。
+- [语义 profile](docs/SEMANTIC-PROFILES.md)：动作目录与应用适配。
+- [录制](docs/RECORDING.md) / [Replay](docs/REPLAY.md)：配方复用与检查点。
+- [编排开发分支](https://github.com/ClarkWain/DesktopPilot/tree/refactor/node-orchestration)：通用任务编排与批处理预览。
+- [变更记录](CHANGELOG.md) / [本机验收](docs/MACOS-VALIDATION.md)：版本进展和验证范围。
+- [贡献指南](CONTRIBUTING.md)：参与开发与验证。
 
 ## 许可证
 
-原创代码采用 [MIT](LICENSE)。第三方代码、模型及改编内容保留各自许可，见 [第三方声明](THIRD_PARTY_NOTICES.md)。
+原创代码采用 [MIT](LICENSE)。第三方代码与可选模型遵循各自许可，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
