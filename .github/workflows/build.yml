@@ -76,6 +76,13 @@ jobs:
       - name: Check macOS package
         shell: pwsh
         run: ./scripts/check-package.ps1 -Path out/dist/ComputerPilot-macos
+      - name: Archive macOS arm64 package
+        run: |
+          test "$(uname -m)" = arm64
+          mv out/dist/ComputerPilot-macos out/dist/ComputerPilot
+          tar -czf out/ComputerPilot-macos-arm64-core.tar.gz -C out/dist ComputerPilot
+          cd out
+          shasum -a 256 ComputerPilot-macos-arm64-core.tar.gz > SHA256SUMS-macos.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ComputerPilot-macos-arm64-core
