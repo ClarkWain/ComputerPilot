@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
-Set-Location 'g:\Workspace\DesktopPilot'
+Set-Location 'g:\Workspace\ComputerPilot'
 $psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = '.\build\core\Release\desktop-pilot.exe'
+$psi.FileName = '.\build\core\Release\computer-pilot.exe'
 $psi.Arguments = 'jsonl'
 $psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true

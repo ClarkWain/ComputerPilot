@@ -1,5 +1,5 @@
 $ErrorActionPreference='Stop'
-$exe=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../build/core/Release/desktop-pilot.exe'))
+$exe=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../build/core/Release/computer-pilot.exe'))
 $p=[Diagnostics.Process]::new()
 $p.StartInfo.FileName=$exe
 $p.StartInfo.Arguments='jsonl'

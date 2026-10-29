@@ -8,8 +8,8 @@
 cmake --preset core-only
 cmake --build --preset core-only --parallel 4
 ctest --preset core-only -LE interactive
-./build/core/desktop-pilot doctor
-./build/core/desktop-pilot serve
+./build/core/computer-pilot doctor
+./build/core/computer-pilot serve
 ```
 
 首次配置会下载校验过的 libwebp。离线或仅使用 PNG 时，配置加 `-DDP_WITH_WEBP=OFF`。Apple Silicon 与 Intel 使用本机编译器架构；本机验证记录不能代替另一架构的测试。已有 Windows 构建目录时，应先另选一个构建目录，例如 `cmake --preset core-only -B build/mac-core`，后续 build/ctest 使用相同目录。
@@ -17,13 +17,13 @@ ctest --preset core-only -LE interactive
 MCP 配置（替换真实路径）：
 
 ```json
-{"mcpServers":{"desktop-pilot":{"command":"/absolute/path/DesktopPilot/build/core/desktop-pilot","args":["serve"]}}}
+{"mcpServers":{"computer-pilot":{"command":"/absolute/path/ComputerPilot/build/core/computer-pilot","args":["serve"]}}}
 ```
 
 四个公开工具与 Windows 相同。源码构建中可运行只读入门检查：
 
 ```sh
-python3 examples/onboarding/macos-check.py ./build/core/desktop-pilot
+python3 examples/onboarding/macos-check.py ./build/core/computer-pilot
 ```
 
 该脚本只连接、读取初始化诊断和列窗口，不激活或修改窗口。Python 是示例客户端与测试的依赖，不是服务运行依赖。
@@ -118,7 +118,7 @@ ctest --preset core-only -L interactive
 可用 CMake 打包 core 二进制：
 
 ```sh
-cmake -DDP_BINARY_DIR=build/core -DDP_PACKAGE_DIR=out/dist/DesktopPilot-macos -P cmake/package.cmake
+cmake -DDP_BINARY_DIR=build/core -DDP_PACKAGE_DIR=out/dist/ComputerPilot-macos -P cmake/package.cmake
 ```
 
 本阶段不提供签名/公证安装包。macOS 可选 LibTorch / OCR 依赖需自行配置匹配架构的原生库，现有 Windows bootstrap 脚本不能用于下载 macOS 库；这些可选推理后端不在本阶段验证范围内。

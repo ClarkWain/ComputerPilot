@@ -27,7 +27,7 @@
 - execute_semantic 在执行前重新匹配，显式指定 ID 也不能跳过检查。不会把 Paint 配置用于 Aseprite。
 - 这不是完整版本号认证；符合指纹仍需由具体动作检查布局和绘图结果。未滚动画布等条件目前仍需结合截图确认。
 
-默认从 exe 所在目录及上级安装目录查找 profiles，源码构建和 Release 布局都支持。可用环境变量 `DESKTOPPILOT_PROFILES_DIR` 指定完整目录；配置后只读取该目录。MCP 只接收 profile ID，不接收文件路径。
+默认从 exe 所在目录及上级安装目录查找 profiles，源码构建和 Release 布局都支持。可用环境变量 `COMPUTERPILOT_PROFILES_DIR` 指定完整目录；配置后只读取该目录。MCP 只接收 profile ID，不接收文件路径。
 
 ## 当前 profile
 

@@ -1,8 +1,8 @@
 # 从第一个任务迁移到实际应用
 
-macOS 使用 `python3 examples/onboarding/macos-check.py ./build/core/desktop-pilot` 做只读连接检查，表单验证使用 `ctest --preset core-only -L interactive`。详见 [macOS](../../docs/MACOS.md)。macOS 的锁屏检查返回后台能力分类；界面批次暂停后，解锁并重新观察，再仅提交未完成动作。下面的 PowerShell/Win32 示例用于 Windows。
+macOS 使用 `python3 examples/onboarding/macos-check.py ./build/core/computer-pilot` 做只读连接检查，表单验证使用 `ctest --preset core-only -L interactive`。详见 [macOS](../../docs/MACOS.md)。macOS 的锁屏检查返回后台能力分类；界面批次暂停后，解锁并重新观察，再仅提交未完成动作。下面的 PowerShell/Win32 示例用于 Windows。
 
-在仓库或 Release 根目录执行，入口自动查找本目录的二进制；也可传 -Executable 指定真实程序。只使用原生 DesktopPilot 和 PowerShell。
+在仓库或 Release 根目录执行，入口自动查找本目录的二进制；也可传 -Executable 指定真实程序。只使用原生 ComputerPilot 和 PowerShell。
 
 ## 第一步：连接
 
@@ -10,7 +10,7 @@ macOS 使用 `python3 examples/onboarding/macos-check.py ./build/core/desktop-pi
 pwsh -NoProfile -File examples/onboarding/start.ps1 -Task check
 ```
 
-ready 表示实际 worker 的环境预检通过。失败看返回原因，先修正启动方式，不重试点击。DesktopPilot 必须与目标应用处于同一用户会话和输入桌面，且输入权限可用。
+ready 表示实际 worker 的环境预检通过。失败看返回原因，先修正启动方式，不重试点击。ComputerPilot 必须与目标应用处于同一用户会话和输入桌面，且输入权限可用。
 
 ## 第二步：完成表单任务
 
@@ -18,7 +18,7 @@ ready 表示实际 worker 的环境预检通过。失败看返回原因，先修
 pwsh -NoProfile -File examples/onboarding/start.ps1 -Task form
 ```
 
-打开专用测试窗口，使用四工具接口完成：连接 → 找窗口 → 获取状态 → 填写并 Apply → 获取状态验收。预期 status:passed、fieldsVerified:1、applicationResult 为 Applied: Hello DesktopPilot、staleObservationRejected:true。结束只关闭本次创建的测试窗口。
+打开专用测试窗口，使用四工具接口完成：连接 → 找窗口 → 获取状态 → 填写并 Apply → 获取状态验收。预期 status:passed、fieldsVerified:1、applicationResult 为 Applied: Hello ComputerPilot、staleObservationRejected:true。结束只关闭本次创建的测试窗口。
 
 这个例子同时教会三件事：从观察找控件、把稳定动作合成批次、通过应用变化验收。旧 observation 的重复操作必须被拒绝，而不是再次点击。
 

@@ -217,7 +217,7 @@ Json AgentApi::call(const std::string& tool,const Json& a,const Dispatch& extern
             if(mode!="controls") {
                 const char* format=std::getenv("DP_IMAGE_FORMAT");
                 const bool webp=webp_available()&&format&&std::string(format)=="webp";
-                auto path=std::filesystem::temp_directory_path()/std::filesystem::u8path("desktop-pilot-observe-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())+(webp?".webp":".png"));
+                auto path=std::filesystem::temp_directory_path()/std::filesystem::u8path("computer-pilot-observe-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())+(webp?".webp":".png"));
                 Json captureArgs={{"windowRef",window_id},{"method","screen"},{"output",utf8(path.wstring())},{"maxEdge",1600}};
                 if(a.contains("region")) {fields(a["region"],{"x","y","width","height"});captureArgs["region"]=a["region"];captureArgs["lossless"]=true;}
                 auto capture=dispatch("capture.window",captureArgs);

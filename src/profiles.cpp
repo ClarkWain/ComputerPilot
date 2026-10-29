@@ -42,7 +42,8 @@ bool profile_supports_dpi(const Json& profile,int dpi) {
     return false;
 }
 std::filesystem::path profiles_directory() {
-    const auto configured=environment_path("DESKTOPPILOT_PROFILES_DIR");
+    auto configured=environment_path("COMPUTERPILOT_PROFILES_DIR");
+    if(configured.empty())configured=environment_path("DESKTOPPILOT_PROFILES_DIR");
     if(!configured.empty())return configured;
     const auto executable=executable_path();
     auto dir=executable.parent_path();

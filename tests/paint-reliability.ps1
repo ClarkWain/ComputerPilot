@@ -17,7 +17,7 @@ $stderr=$p.StandardError.ReadToEndAsync()
 function Invoke-Pilot($op,$a) {
  $p.StandardInput.WriteLine((@{id=1;operation=$op;args=$a}|ConvertTo-Json -Depth 40 -Compress));$p.StandardInput.Flush()
  $read=$p.StandardOutput.ReadLineAsync()
- if(-not $read.Wait(600000)){throw 'DesktopPilot timed out'}
+ if(-not $read.Wait(600000)){throw 'ComputerPilot timed out'}
  $r=$read.Result|ConvertFrom-Json
  if($r.error){throw ($r.error|ConvertTo-Json -Compress)}
  $r.result

@@ -1,13 +1,13 @@
-# DesktopPilot MCP 接入
+# ComputerPilot MCP 接入
 
-macOS 的配置、权限诊断和坐标说明见 [macOS 接入](MACOS.md)。其公开工具与 Windows 相同，程序路径为无 `.exe` 后缀的 `desktop-pilot`。
+macOS 的配置、权限诊断和坐标说明见 [macOS 接入](MACOS.md)。其公开工具与 Windows 相同，程序路径为无 `.exe` 后缀的 `computer-pilot`。
 
-DesktopPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state`、`execute_semantic`、`execute_batch`。语义动作是优先执行方式，但取决于实际窗口是否有匹配 profile。完整操作教程见 [Skill](../skills/desktoppilot/SKILL.md)，精确 schema 见 [接口参考](AGENT-API.md)。
+ComputerPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state`、`execute_semantic`、`execute_batch`。语义动作是优先执行方式，但取决于实际窗口是否有匹配 profile。完整操作教程见 [Skill](../skills/computerpilot/SKILL.md)，精确 schema 见 [接口参考](AGENT-API.md)。
 
 ## 配置
 
 ```json
-{"mcpServers":{"desktop-pilot":{"command":"C:/实际安装目录/bin/desktop-pilot.exe","args":["serve"]}}}
+{"mcpServers":{"computer-pilot":{"command":"C:/实际安装目录/bin/computer-pilot.exe","args":["serve"]}}}
 ```
 
 将路径替换为真实路径。源码构建位于 `build/core/Release`，发行包位于 `bin`。服务必须和目标应用在同一个 Windows 用户会话、输入桌面中运行，不能从不允许输入的隔离环境启动。
@@ -16,7 +16,7 @@ DesktopPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state`
 
 macOS 的 `ready:false` 同时返回 `executionMode:background_only` 与具体能力分类。当前没有锁屏应用写入动作通过实测；窗口列表/元数据等诊断可继续。界面批次遇到锁屏返回 `paused:true`、`completed`、`failedIndex` 和 `resumeRequiresObservation:true`。正常解锁无需重启服务，但必须重新 `get_window_state` 并检查失败动作是否部分完成，再仅提交剩余动作；服务不自动重放。详见 [锁屏降级与恢复](MACOS.md#锁屏降级与恢复)。
 
-显式动作回放由 `desktop-pilot replay` CLI 提供，不是第五个 MCP 工具。它使用新画布和新观察执行已定义的流程；失败后仍不会自动重放。见 [Replay](REPLAY.md)。
+显式动作回放由 `computer-pilot replay` CLI 提供，不是第五个 MCP 工具。它使用新画布和新观察执行已定义的流程；失败后仍不会自动重放。见 [Replay](REPLAY.md)。
 
 ## 四个工具的分工
 
@@ -41,7 +41,7 @@ UIA 按需初始化，使用 `IUIAutomation2` 配置并回读连接、事务超�
 
 ## 调用方式
 
-MCP 宿主直接调用四个工具，Agent 阅读返回值决定下一步。没有宿主时启动 `desktop-pilot.exe serve`，保持一个进程，用下节 JSON-RPC 协议通讯；也可选用 `examples/onboarding/client.ps1` 的 Open-Pilot / Call-Pilot / Close-Pilot，不要求 Agent 使用 PowerShell。
+MCP 宿主直接调用四个工具，Agent 阅读返回值决定下一步。没有宿主时启动 `computer-pilot.exe serve`，保持一个进程，用下节 JSON-RPC 协议通讯；也可选用 `examples/onboarding/client.ps1` 的 Open-Pilot / Call-Pilot / Close-Pilot，不要求 Agent 使用 PowerShell。
 
 先 list_windows（空参数），辨认目标，再 get_window_state。基础操作用 execute_batch，例如一次连续笔画：
 
@@ -57,7 +57,7 @@ MCP 宿主直接调用四个工具，Agent 阅读返回值决定下一步。没�
 
 ## 通讯协议
 
-启动 `desktop-pilot.exe serve`。stdin/stdout 是 UTF-8、每行一条 JSON-RPC 2.0 消息。先发送 initialize 并等待响应，再发 notifications/initialized，然后 tools/list 或 tools/call：
+启动 `computer-pilot.exe serve`。stdin/stdout 是 UTF-8、每行一条 JSON-RPC 2.0 消息。先发送 initialize 并等待响应，再发 notifications/initialized，然后 tools/list 或 tools/call：
 
 ```jsonl
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"example","version":"1"}}}
@@ -73,7 +73,7 @@ MCP 宿主直接调用四个工具，Agent 阅读返回值决定下一步。没�
 
 ## 升级与开发
 
-工具减少没有取消环境、目标唯一性与结果验收要求。完整的表单示例与局部恢复见 [Skill 第六、七节](../skills/desktoppilot/SKILL.md)。
+工具减少没有取消环境、目标唯一性与结果验收要求。完整的表单示例与局部恢复见 [Skill 第六、七节](../skills/computerpilot/SKILL.md)。
 
 旧工具名不保留兼容入口，包括 `computer_*`、`check_environment`、`execute_single`。升级程序并重连客户端，刷新 tools/list。仅修改文档不会更新运行中的旧进程。
 

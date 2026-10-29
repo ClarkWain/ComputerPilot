@@ -82,11 +82,11 @@ int run_slow_provider(const wchar_t* eventName) {
     if (!ready) { CloseHandle(entered); return 2; }
     WNDCLASSW cls{};
     cls.lpfnWndProc = slow_window_proc; cls.hInstance = GetModuleHandleW(nullptr);
-    cls.lpszClassName = L"DesktopPilotSlowProviderFixture";
+    cls.lpszClassName = L"ComputerPilotSlowProviderFixture";
     RegisterClassW(&cls);
     slowProvider = new SlowProvider;
     slowProvider->entered = entered;
-    slowProvider->window = CreateWindowExW(WS_EX_TOOLWINDOW, cls.lpszClassName, L"DesktopPilot Slow Provider",
+    slowProvider->window = CreateWindowExW(WS_EX_TOOLWINDOW, cls.lpszClassName, L"ComputerPilot Slow Provider",
         WS_OVERLAPPEDWINDOW, 0, 0, 240, 120, nullptr, nullptr, cls.hInstance, nullptr);
     if (!slowProvider->window) return 2;
     SetEvent(ready);
@@ -113,7 +113,7 @@ int verify_provider_timeout() {
     try {
         wchar_t executable[32768]{};
         require(GetModuleFileNameW(nullptr, executable, 32768) != 0, "Cannot find fixture executable");
-        auto eventName = L"Local\\DesktopPilotProviderTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
+        auto eventName = L"Local\\ComputerPilotProviderTest-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64());
         child.entered = CreateEventW(nullptr, TRUE, FALSE, eventName.c_str());
         child.ready = CreateEventW(nullptr, TRUE, FALSE, (eventName + L"-ready").c_str());
         child.stop = CreateEventW(nullptr, TRUE, FALSE, nullptr);
@@ -132,7 +132,7 @@ int verify_provider_timeout() {
         require(readyResult == WAIT_OBJECT_0, "Slow provider fixture did not signal window readiness");
         dp::Service service;
         auto windows = service.execute("window.list", {{"pid", child.process.dwProcessId}, {"includeHidden", true},
-            {"titleContains", "DesktopPilot Slow Provider"}})["windows"];
+            {"titleContains", "ComputerPilot Slow Provider"}})["windows"];
         require(windows.size() == 1, "Slow provider fixture window not found");
         auto started = std::chrono::steady_clock::now();
         bool failed = false;
@@ -188,11 +188,11 @@ int wmain(int argc, wchar_t **argv) {
     WNDCLASSW c{};
     c.lpfnWndProc = window_proc;
     c.hInstance = GetModuleHandleW(nullptr);
-    c.lpszClassName = L"DesktopPilotVerificationFixture";
+    c.lpszClassName = L"ComputerPilotVerificationFixture";
     c.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
     RegisterClassW(&c);
     HWND window =
-        CreateWindowExW(WS_EX_TOOLWINDOW, c.lpszClassName, L"DesktopPilot Native Verification",
+        CreateWindowExW(WS_EX_TOOLWINDOW, c.lpszClassName, L"ComputerPilot Native Verification",
                         WS_OVERLAPPEDWINDOW, 80, 80, 520, 260, nullptr, nullptr, c.hInstance, nullptr);
     if (!window)
         return 2;
@@ -204,7 +204,7 @@ int wmain(int argc, wchar_t **argv) {
                              reinterpret_cast<HMENU>(103), c.hInstance, nullptr);
     ShowWindow(window, SW_SHOWNOACTIVATE);
     UpdateWindow(window);
-    HWND interruption=CreateWindowExW(WS_EX_TOOLWINDOW,c.lpszClassName,L"DesktopPilot Interruption Fixture",WS_OVERLAPPEDWINDOW,650,80,400,260,nullptr,nullptr,c.hInstance,nullptr);
+    HWND interruption=CreateWindowExW(WS_EX_TOOLWINDOW,c.lpszClassName,L"ComputerPilot Interruption Fixture",WS_OVERLAPPEDWINDOW,650,80,400,260,nullptr,nullptr,c.hInstance,nullptr);
     std::atomic<bool> done = false;
     int exit_code = 0;
     std::thread test([&] {
@@ -215,7 +215,7 @@ int wmain(int argc, wchar_t **argv) {
             dp::Service d;
             auto windows =
                 d.execute("window.list", {{"pid", GetCurrentProcessId()},
-                                          {"titleContains", "DesktopPilot Native Verification"}})["windows"];
+                                          {"titleContains", "ComputerPilot Native Verification"}})["windows"];
             require(windows.size() == 1, "fixture window not unique");
             auto w = windows[0]["windowRef"];
             auto before = windows[0]["bounds"];
@@ -254,7 +254,7 @@ int wmain(int argc, wchar_t **argv) {
                     require(SUCCEEDED(com), "Cannot initialize fallback fixture STA");
                     dp::Service isolated;
                     auto targets = isolated.execute("window.list", {{"pid", GetCurrentProcessId()},
-                        {"titleContains", "DesktopPilot Native Verification"}})["windows"];
+                        {"titleContains", "ComputerPilot Native Verification"}})["windows"];
                     require(targets.size() == 1, "Fallback fixture target missing");
                     const auto target = targets[0]["windowRef"];
                     bool unavailable = false;

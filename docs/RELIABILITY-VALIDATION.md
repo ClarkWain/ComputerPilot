@@ -57,7 +57,7 @@ Run after restoring a usable interactive desktop:
 
 ```powershell
 ctest --preset core-only -R '^(native-desktop|native-provider-timeout|native-pointer-path|native-input-routing)$' --output-on-failure
-./tests/paint-observation-reliability.ps1 -Executable ./build/core/Release/desktop-pilot.exe -OutputDirectory out/paint-validation-fresh -WaitForVisualReview
+./tests/paint-observation-reliability.ps1 -Executable ./build/core/Release/computer-pilot.exe -OutputDirectory out/paint-validation-fresh -WaitForVisualReview
 ```
 
 With `-WaitForVisualReview`, inspect the printed `REVIEW_IMAGE` before creating the

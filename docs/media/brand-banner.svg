@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="340" viewBox="0 0 1400 340" role="img" aria-label="ComputerPilot — Semantic actions. Replayable workflows.">
+<rect width="1400" height="340" rx="24" fill="#10253f"/>
+<g transform="translate(62 61) scale(.85)"><rect width="256" height="256" rx="56" fill="#193752"/><g fill="none" stroke="#61e8bd" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><path d="M63 67h36l35 61M63 128h71M63 189h36l35-61"/></g><g fill="#61e8bd"><circle cx="57" cy="67" r="13"/><circle cx="57" cy="128" r="13"/><circle cx="57" cy="189" r="13"/><path d="M138 84a8 8 0 0 1 12-7l63 44a8 8 0 0 1 0 14l-63 44a8 8 0 0 1-12-7z"/></g></g>
+<text x="330" y="139" fill="#f3f8ff" font-family="Arial,Helvetica,sans-serif" font-weight="700" font-size="76">ComputerPilot</text>
+<text x="334" y="199" fill="#61e8bd" font-family="Arial,Helvetica,sans-serif" font-size="33">Semantic actions. Replayable workflows.</text>
+<text x="335" y="247" fill="#b9cadb" font-family="Arial,Helvetica,sans-serif" font-size="24">Native computer use for AI agents · Windows + macOS</text>
+</svg>

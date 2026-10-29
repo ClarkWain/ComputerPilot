@@ -1,6 +1,6 @@
 # 协议与执行语义
 
-DesktopPilot 提供三种入口：C++ 同步库、MCP JSON-RPC 2.0 stdio、原生 JSONL。日常 MCP 只有四个工具，见 [MCP.md](MCP.md)。下文主要描述原生开发协议，其操作参数以 capabilities/describe 和 OPERATIONS.md 为准。
+ComputerPilot 提供三种入口：C++ 同步库、MCP JSON-RPC 2.0 stdio、原生 JSONL。日常 MCP 只有四个工具，见 [MCP.md](MCP.md)。下文主要描述原生开发协议，其操作参数以 capabilities/describe 和 OPERATIONS.md 为准。
 
 ## JSONL
 
@@ -8,7 +8,7 @@ DesktopPilot 提供三种入口：C++ 同步库、MCP JSON-RPC 2.0 stdio、原�
 {"id":1,"operation":"window.list","args":{}}
 ```
 
-运行 `desktop-pilot.exe jsonl`，每行一个请求；`serve` 与 `jsonl` 均支持 `--input requests.jsonl --output responses.jsonl`。输入输出不得是同一文件。JSONL 直接调用同步后端，不具备 MCP 外层工作进程监督。
+运行 `computer-pilot.exe jsonl`，每行一个请求；`serve` 与 `jsonl` 均支持 `--input requests.jsonl --output responses.jsonl`。输入输出不得是同一文件。JSONL 直接调用同步后端，不具备 MCP 外层工作进程监督。
 
 ## 引用与坐标
 

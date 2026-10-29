@@ -292,7 +292,7 @@ Json Service::perform_semantic(const Json& args, const SemanticEvidence* evidenc
     auto semanticArgs = args;
     if (!semanticArgs.contains("failureScreenshot")) {
         semanticArgs["failureScreenshot"] = utf8((std::filesystem::temp_directory_path() /
-            (L"desktop-pilot-failure-" + std::to_wstring(std::chrono::steady_clock::now().time_since_epoch().count()) + L".png")).wstring());
+            (L"computer-pilot-failure-" + std::to_wstring(std::chrono::steady_clock::now().time_since_epoch().count()) + L".png")).wstring());
     } else if (semanticArgs["failureScreenshot"] == false) semanticArgs.erase("failureScreenshot");
     return run_semantic(semanticArgs, profile,
         [&](const std::string& operation, const Json& parameters) {

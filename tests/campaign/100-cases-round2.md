@@ -1,4 +1,4 @@
-# DesktopPilot — Round 2: 100 More Real-Usage Examples
+# ComputerPilot — Round 2: 100 More Real-Usage Examples
 
 Broader coverage of common Windows software and interaction patterns, complementing
 `100-cases.md` (which focused on Paint, Notepad++, Calculator, browser, Settings, protocol).
@@ -65,7 +65,7 @@ Status legend: PASS / FAIL / PARTIAL / BLOCKED / SKIPPED.
 
 ## Batch 15 — Terminal / PowerShell / CMD (R41–R50)
 - R41 Identify an open PowerShell/Terminal window (or open one) — do NOT run destructive commands.
-- R42 type_text a harmless command `echo DesktopPilot`, Enter → read the echoed output from the buffer.
+- R42 type_text a harmless command `echo ComputerPilot`, Enter → read the echoed output from the buffer.
 - R43 type_text `Get-Date` (PS) or `date /t` (cmd), Enter → verify a date string appears.
 - R44 Use Ctrl+C to cancel a partially typed line → verify prompt returns.
 - R45 Clear screen: type `cls`/`clear`, Enter → verify buffer cleared.

@@ -1,6 +1,6 @@
-# DesktopPilot contributor and agent entry
+# ComputerPilot contributor and agent entry
 
-For desktop tasks read skills/desktoppilot/SKILL.md. The public MCP API has exactly four tools: list_windows, get_window_state, execute_semantic, execute_batch. Discover the actual window, inspect it, prefer a matching semantic profile, otherwise use basic input, then inspect the result. No legacy MCP aliases or agent-managed state_id.
+For desktop tasks read skills/computerpilot/SKILL.md. The public MCP API has exactly four tools: list_windows, get_window_state, execute_semantic, execute_batch. Discover the actual window, inspect it, prefer a matching semantic profile, otherwise use basic input, then inspect the result. No legacy MCP aliases or agent-managed state_id.
 
 The executor must share the application's interactive user session and permit input (Windows input desktop; macOS console session with Accessibility/Screen Recording permission). Startup and execution check this automatically; ready:false means inspect the reasons, not retry clicks. macOS allows only listed background diagnostics while locked; no application writes are lock-screen validated. After unlock, reacquire an observation before submitting only unfinished actions; never replay a paused batch automatically. State reads and input recover focus automatically. Modal blockers are reported with their window identity. Do not resize user windows without a task reason.
 

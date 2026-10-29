@@ -29,25 +29,25 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cmake --build build/consumer --config Release --parallel 4
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & build/consumer/Release/desktop-pilot-example.exe
+          & build/consumer/Release/computer-pilot-example.exe
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Package and smoke test
         shell: pwsh
         run: |
-          cmake -DDP_BINARY_DIR=build/core/Release -DDP_PACKAGE_DIR=out/dist/DesktopPilot -P cmake/package.cmake
+          cmake -DDP_BINARY_DIR=build/core/Release -DDP_PACKAGE_DIR=out/dist/ComputerPilot -P cmake/package.cmake
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & out/dist/DesktopPilot/bin/desktop-pilot.exe capabilities
+          & out/dist/ComputerPilot/bin/computer-pilot.exe capabilities
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & scripts/check-package.ps1 -Path out/dist/DesktopPilot
-          Compress-Archive -Path out/dist/DesktopPilot -DestinationPath out/DesktopPilot-windows-x64-core.zip
-          $hash = (Get-FileHash out/DesktopPilot-windows-x64-core.zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  DesktopPilot-windows-x64-core.zip" | Set-Content -Encoding ascii out/SHA256SUMS.txt
+          & scripts/check-package.ps1 -Path out/dist/ComputerPilot
+          Compress-Archive -Path out/dist/ComputerPilot -DestinationPath out/ComputerPilot-windows-x64-core.zip
+          $hash = (Get-FileHash out/ComputerPilot-windows-x64-core.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  ComputerPilot-windows-x64-core.zip" | Set-Content -Encoding ascii out/SHA256SUMS-windows.txt
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: DesktopPilot-windows-x64-core
+          name: ComputerPilot-windows-x64-core
           path: |
-            out/DesktopPilot-windows-x64-core.zip
-            out/SHA256SUMS.txt
+            out/ComputerPilot-windows-x64-core.zip
+            out/SHA256SUMS-windows.txt
           if-no-files-found: error
 
   macos-core:
@@ -63,21 +63,23 @@ jobs:
         run: ctest --preset core-only -LE interactive
       - name: Check generated API reference
         shell: pwsh
-        run: ./examples/onboarding/generate-reference.ps1 -Executable ./build/core/desktop-pilot -Check
+        run: ./examples/onboarding/generate-reference.ps1 -Executable ./build/core/computer-pilot -Check
       - name: Build C++ consumer
         run: |
           cmake -S examples/cpp -B build/consumer -DCMAKE_BUILD_TYPE=Release
           cmake --build build/consumer --parallel 4
-          ./build/consumer/desktop-pilot-example
+          ./build/consumer/computer-pilot-example
       - name: Package macOS core
         run: |
-          cmake -DDP_BINARY_DIR=build/core -DDP_PACKAGE_DIR=out/dist/DesktopPilot-macos -P cmake/package.cmake
-          ./out/dist/DesktopPilot-macos/bin/desktop-pilot capabilities
+          cmake -DDP_BINARY_DIR=build/core -DDP_PACKAGE_DIR=out/dist/ComputerPilot-macos -P cmake/package.cmake
+          ./out/dist/ComputerPilot-macos/bin/computer-pilot capabilities
       - name: Check macOS package
         shell: pwsh
-        run: ./scripts/check-package.ps1 -Path out/dist/DesktopPilot-macos
+        run: ./scripts/check-package.ps1 -Path out/dist/ComputerPilot-macos
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: DesktopPilot-macos-core
-          path: out/dist/DesktopPilot-macos
+          name: ComputerPilot-macos-arm64-core
+          path: |
+            out/ComputerPilot-macos-arm64-core.tar.gz
+            out/SHA256SUMS-macos.txt
           if-no-files-found: error

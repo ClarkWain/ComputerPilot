@@ -1,17 +1,17 @@
 ---
-name: desktoppilot
-description: 使用 DesktopPilot 操纵 Windows / macOS 桌面软件，读取控件和截图，执行应用语义、填写表单、键鼠操作并验证结果。实际桌面操作时使用；解释软件用法或编辑代码时无需使用。
+name: computerpilot
+description: 使用 ComputerPilot 操纵 Windows / macOS 桌面软件，读取控件和截图，执行应用语义、填写表单、键鼠操作并验证结果。实际桌面操作时使用；解释软件用法或编辑代码时无需使用。
 ---
 
-# 使用 DesktopPilot 操纵电脑
+# 使用 ComputerPilot 操纵电脑
 
-这个 Skill 教 Agent 通过 DesktopPilot 操纵 Windows 电脑完成任务，例如在画图软件中绘画，在浏览器中搜索、填写表单，或操作 Photoshop、Blender 等软件的界面。Agent 负责理解目标、选择操作和验收结果；DesktopPilot 作为中间层执行实际操作。
+这个 Skill 教 Agent 通过 ComputerPilot 操纵 Windows 或 macOS 电脑完成任务，例如在画图软件中绘画，在浏览器中搜索、填写表单，或操作 Photoshop、Blender 等软件的界面。Agent 负责理解目标、选择操作和验收结果；ComputerPilot 作为中间层执行实际操作。
 
 **用途与限制：** 有匹配 profile 的软件可以直接执行语义动作；其他软件使用基础键鼠操作。经典简体中文 Paint 支持绘图、文字和保存。新版中文 Paint 11.2605 仅适配 120 DPI、100% 缩放、完整可见画布及展开工具栏，支持选笔、RGB、笔宽、连续路径和油漆桶填充；仅使用实际返回的 actions。Aseprite v1.2.15 英文界面在 120 DPI 下提供 stock 热键选工具/缩放和通用点击；OCR 菜单动作只在带 OCR 后端的构建中出现。没有 Aseprite 绘图或保存语义。不同版本、缩放、滚动与小图形误差都必须验收。
 
 新版绘制闭合花朵轮廓可直接调用 `drawing.drawPolyline`，提供画布坐标 `points`、`closed:true`、`stroke:{color:[r,g,b],width:7}`，再用 `drawing.fillAt` 的 `position:[x,y]` 和 `color:[r,g,b]` 填内部。一次 execute_semantic 可提交多个动作。无需 Agent 编写键鼠脚本，程序负责选笔、设色、笔宽与回读。fillAt 使用真实油漆桶，调用者应确保轮廓闭合。新版暂不支持原生形状、文字、保存、图层操作或其他缩放；不要从经典 profile 借用未列出的动作。用户要求不保存时保留文档打开。
 
-**不可用环境：** 没安装 Windows 版程序，或者程序不在目标应用的用户会话和输入桌面，无法正常发送输入。锁屏、断开的远程会话和受限执行令牌也可能造成失败。服务自动检查并返回原因；此时应修正启动环境，而不是反复点击。当前不承诺锁屏绘图或任意后台输入。
+**不可用环境：** 没有安装对应平台的程序，或者程序不在目标应用的可交互用户会话，无法正常发送输入。锁屏、断开的远程会话和受限执行令牌也可能造成失败。服务自动检查并返回原因；此时应修正启动环境，而不是反复点击。当前不承诺锁屏绘图或任意后台输入。
 
 只有四个工具：
 
@@ -30,7 +30,7 @@ description: 使用 DesktopPilot 操纵 Windows / macOS 桌面软件，读取控
 
 ## macOS 平台说明
 
-macOS 14+ 原生程序为 `build/core/desktop-pilot` 或分发目录 `bin/desktop-pilot`，启动参数仍为 `serve`，保持同一持久连接。先读初始化中实际 worker 的 preflight。需要辅助功能与屏幕录制授权，且目标和执行器在同一个已解锁的图形用户会话；失败时修正权限/启动环境、重启连接，不反复点击。
+macOS 14+ 原生程序为 `build/core/computer-pilot` 或分发目录 `bin/computer-pilot`，启动参数仍为 `serve`，保持同一持久连接。先读初始化中实际 worker 的 preflight。需要辅助功能与屏幕录制授权，且目标和执行器在同一个已解锁的图形用户会话；失败时修正权限/启动环境、重启连接，不反复点击。
 
 锁屏时 preflight 保持 `ready:false`，`executionMode:background_only`；只可用返回能力中的后台诊断，当前 `lockedApplicationActions` 为空。界面批次返回 `paused:true` 时保留 completed/failedIndex/failedActionOutcome。正常解锁无需重启服务，但必须重新获取窗口状态；失败动作可能已部分完成，先检查结果再只提交未完成部分，不能整批重放。后台会话监测会使旧观察失效，Agent 不管理 generation。权限或启动环境变化仍按诊断重启连接。
 
@@ -38,9 +38,9 @@ macOS 本阶段无新增应用 profile，优先按实际控件/截图使用 `exe
 
 ## 显式 Replay
 
-用户明确要求回放现有配方时，可运行原生 CLI `desktop-pilot replay --file 配方.json` 先完整校验，再以 `--mode run --output 新目录` 执行。当前小花配方在 macOS 中文“预览”的新建画布中绘制；记录不包含旧会话引用，输入仍由实际 worker 预检并重新观察定位。不要把“用户要求回放”解释成允许在已有文档上重放失败动作；每次使用独立新画布，失败立即停下并检查报告。详见安装根目录 `docs/REPLAY.md`。
+用户明确要求回放现有配方时，可运行原生 CLI `computer-pilot replay --file 配方.json` 先完整校验，再以 `--mode run --output 新目录` 执行。当前小花配方在 macOS 中文“预览”的新建画布中绘制；记录不包含旧会话引用，输入仍由实际 worker 预检并重新观察定位。不要把“用户要求回放”解释成允许在已有文档上重放失败动作；每次使用独立新画布，失败立即停下并检查报告。详见安装根目录 `docs/REPLAY.md`。
 
-需要录制本次 DesktopPilot 流程时，可显式用 `serve --record 新目录` 或 `replay --mode run ... --record 新目录`。正常关闭连接后，通过 `recording-export` 离线导出；它重新生成定位条件和笔画，不复制模板动作。当前仅支持文档化的绘图操作，故障/部分执行/未知结果不能导出为可直接运行的配方。录制不监听用户全局手动输入，日志包含实际操作数据，不提交或发布原始日志。见 `docs/RECORDING.md`。
+需要录制本次 ComputerPilot 流程时，可显式用 `serve --record 新目录` 或 `replay --mode run ... --record 新目录`。正常关闭连接后，通过 `recording-export` 离线导出；它重新生成定位条件和笔画，不复制模板动作。当前仅支持文档化的绘图操作，故障/部分执行/未知结果不能导出为可直接运行的配方。录制不监听用户全局手动输入，日志包含实际操作数据，不提交或发布原始日志。见 `docs/RECORDING.md`。
 
 用户明确要求分段或续跑时，可在完整笔画组后的 `--stop-after` 边界生成检查点，再用 `replay-resume --from 原运行目录` 显式继续。仅 `ready` 检查点、文件/画布/可观察工具状态匹配且应用确认已保存时放行；重新发现目标，不复用旧引用、不重画前缀。禁止手改状态或删除锁来重发未知结果；锁屏不触发自动续跑。详见 `docs/REPLAY.md`。
 
@@ -52,9 +52,9 @@ macOS 本阶段无新增应用 profile，优先按实际控件/截图使用 `exe
 
 ### 没有 MCP 工具
 
-读取本 skill 目录下的 `installation.json`，找到 `root` 与 `executable`，确认路径存在。没有该文件时在用户指定仓库或 Release 中找 `bin/desktop-pilot.exe` 或 `build/core/Release/desktop-pilot.exe`。不要猜另一个项目的路径。
+读取本 skill 目录下的 `installation.json`，找到 `root` 与 `executable`，确认路径存在。没有该文件时在用户指定仓库或 Release 中找 `bin/computer-pilot.exe` 或 `build/core/Release/computer-pilot.exe`。不要猜另一个项目的路径。
 
-启动 `desktop-pilot.exe serve`，保持同一个服务进程，通过 stdin/stdout 交换下面的 JSON 消息。MCP 宿主或 Agent 选择的客户端负责收发；Agent 负责阅读响应并决定下一步，不需要套用固定的 PowerShell 判断脚本。
+启动 `computer-pilot.exe serve`，保持同一个服务进程，通过 stdin/stdout 交换下面的 JSON 消息。MCP 宿主或 Agent 选择的客户端负责收发；Agent 负责阅读响应并决定下一步，不需要套用固定的 PowerShell 判断脚本。
 
 仓库也提供 `examples/onboarding/client.ps1` 作为可选通讯辅助：Open-Pilot 建立连接，Call-Pilot 调用工具，Close-Pilot 结束连接。Open-Pilot 保存初始化响应，但不会因 `ready:false` 自动抛错；Agent 仍须判断环境是否可用。
 
@@ -62,7 +62,7 @@ macOS 本阶段无新增应用 profile，优先按实际控件/截图使用 `exe
 
 客户端直接启动 C++ 程序，只负责持久通讯，不需要 Node/Python。不要为每次调用重新启动程序，窗口和控件引用属于当前连接。操作多轮任务时，保持客户端会话，最后才关闭连接。
 
-如果自己实现客户端，启动 `desktop-pilot.exe serve`，通过 UTF-8 stdin/stdout 每行发送一个 JSON-RPC 消息：
+如果自己实现客户端，启动 `computer-pilot.exe serve`，通过 UTF-8 stdin/stdout 每行发送一个 JSON-RPC 消息：
 
 ```jsonl
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"my-agent","version":"1"}}}
@@ -360,13 +360,13 @@ points 使用紧凑的 `[x,y]` 数组，不逐点重复 type、窗口、坐标�
 {
   "window_id":"w1",
   "actions":[
-    {"type":"fill_text","control_id":"e-title","text":"Hello DesktopPilot"},
+    {"type":"fill_text","control_id":"e-title","text":"Hello ComputerPilot"},
     {"type":"click","control_id":"e-apply"}
   ]
 }
 ```
 
-5. 读取批次回执。成功也要再调用 `get_window_state {"window_id":"w1","mode":"controls"}`，核对字段和应用反馈；本例读到完整的 `Applied: Hello DesktopPilot` 才算通过。
+5. 读取批次回执。成功也要再调用 `get_window_state {"window_id":"w1","mode":"controls"}`，核对字段和应用反馈；本例读到完整的 `Applied: Hello ComputerPilot` 才算通过。
 6. 页面还在处理时，有界等待后再观察，不重复点击 Apply。失败则按下一节判断哪些动作已经发生，只继续必要的部分。
 
 ## 七、错误处理与局部恢复

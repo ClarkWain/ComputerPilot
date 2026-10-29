@@ -1,6 +1,6 @@
 # Aseprite: verified pixel drawing with current native operations
 
-There is **no built-in `aseprite.drawPixels`, `newCanvas` or `setColor` action yet**. Do not call proposed interfaces. Use documented DesktopPilot input/batch operations and a per-run pixel plan. This procedure was informed by a 32脳32 cold-start UI drawing; it is not an Aseprite-version-independent adapter.
+There is **no built-in `aseprite.drawPixels`, `newCanvas` or `setColor` action yet**. Do not call proposed interfaces. Use documented ComputerPilot input/batch operations and a per-run pixel plan. This procedure was informed by a 32脳32 cold-start UI drawing; it is not an Aseprite-version-independent adapter.
 
 ## Before drawing
 

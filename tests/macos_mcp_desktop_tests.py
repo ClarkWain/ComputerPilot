@@ -82,7 +82,7 @@ try:
     child = subprocess.Popen([fixture, 'fixture'], stdout=log, stderr=log)
     window_id = None
     for _ in range(50):
-        matches = [w for w in tool('list_windows', {})['windows'] if w['pid'] == child.pid and w['title'] == 'DesktopPilot disposable macOS fixture']
+        matches = [w for w in tool('list_windows', {})['windows'] if w['pid'] == child.pid and w['title'] == 'ComputerPilot disposable macOS fixture']
         if len(matches) == 1:
             window_id = matches[0]['window_id']
             break

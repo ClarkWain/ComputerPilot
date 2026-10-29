@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
-Set-Location 'g:\Workspace\DesktopPilot'
+Set-Location 'g:\Workspace\ComputerPilot'
 $psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = '.\build\core\Release\desktop-pilot.exe'; $psi.Arguments = 'jsonl'
+$psi.FileName = '.\build\core\Release\computer-pilot.exe'; $psi.Arguments = 'jsonl'
 $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.UseShellExecute = $false
 $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
 $p = [System.Diagnostics.Process]::Start($psi)
@@ -76,6 +76,6 @@ $leaf2 = & $leaf 365 630 510 612 36
 
 Write-Output ("total actions = " + $actions.Count)
 $res = Send 'semantic.execute' @{windowRef = $ref; actions = $actions; providerTimeoutMs = 600000 }
-$res | ConvertTo-Json -Depth 8 -Compress | Out-File 'g:\Workspace\DesktopPilot\tests\campaign\flower-result.json' -Encoding UTF8
+$res | ConvertTo-Json -Depth 8 -Compress | Out-File 'g:\Workspace\ComputerPilot\tests\campaign\flower-result.json' -Encoding UTF8
 Write-Output ('status=' + $res.result.status + ' completed=' + $res.result.completed + '/' + $res.result.total + ' failedIndex=' + $res.result.failedIndex + ' phase=' + $res.result.failure.phase + ' msg=' + $res.result.failure.message + ' err=' + $res.error.message)
 $p.StandardInput.Close(); $p.WaitForExit(5000) | Out-Null

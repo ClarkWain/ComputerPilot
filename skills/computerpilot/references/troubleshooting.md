@@ -1,4 +1,4 @@
-# DesktopPilot 故障处理
+# ComputerPilot 故障处理
 
 先看结果中的 code、message、next 和实际截图，不根据单一现象猜原因。
 

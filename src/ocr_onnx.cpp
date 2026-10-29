@@ -61,7 +61,7 @@ Box envelope(const std::array<cv::Point2f,4>& points) {
 struct Candidate {std::array<cv::Point2f,4> points;float score;};
 }
 struct Ocr::Impl {
-    Ort::Env env{ORT_LOGGING_LEVEL_ERROR,"desktop-pilot-ocr"};
+    Ort::Env env{ORT_LOGGING_LEVEL_ERROR,"computer-pilot-ocr"};
     std::unique_ptr<Session> det,rec;
     OcrOptions options;
     std::vector<std::string> dictionary;

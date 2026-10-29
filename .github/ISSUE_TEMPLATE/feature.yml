@@ -1,0 +1,15 @@
+name: Feature or application profile
+description: Propose a concrete task or validated application adapter.
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: Task and acceptance condition
+      description: What should the agent accomplish, in which application/version and OS? How can the final result be verified?
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current workflow
+      description: Current supported approach and the missing operation or repeated work.

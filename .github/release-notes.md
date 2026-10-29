@@ -1,25 +1,30 @@
-DesktopPilot v0.5.0：面向 Agent 的原生 Windows 桌面自动化与 MCP 服务。
+ComputerPilot v0.6.0 — Semantic actions. Replayable workflows.
 
-## 主要变化
+The first public ComputerPilot release continues DesktopPilot with its cleaned Git history, branches and historical version tags intact.
 
-- MCP 精简为四个工具：`list_windows`、`get_window_state`、`execute_semantic`、`execute_batch`。
-- 根据当前软件、DPI、布局和控件匹配应用 profile；附带经典与受限现代中文版 Paint 语义，以及 Aseprite v1.2.15 的热键/点击适配。
-- 现代 Paint 仅适配记录的 11.2605.81.0、120 DPI、100% 缩放范围。Aseprite 的 OCR 菜单动作只在 OCR 可用的构建中显示；Core 包不含 OCR/模型，也不提供 Aseprite 保存或像素绘图动作。
-- 同批次复用样式与控件定位，支持紧凑连续鼠标路径。
-- 检查交互桌面，恢复目标窗口焦点，报告阻挡输入的模态窗口。
-- 截图最长边限制为 1600，支持局部截图、WebP、PNG 回退与坐标转换。
-- 更新可靠性处理、Skill、profile 文档和回归覆盖。发布构建由 Windows CI 重新执行非交互测试与包检查。
+## Highlights
 
-## 升级
+- Native Windows/macOS engine with exactly four MCP tools: discover windows, observe, execute semantic actions, and batch basic inputs.
+- Implemented classic Chinese Paint semantics and restricted modern Paint/Aseprite profiles; matched application/version/DPI/layout conditions apply.
+- Opt-in call recording and macOS PNG drawing Replay, offline export and checked checkpoint resume. Windows validates recipes; it does not execute macOS Replay.
+- New ComputerPilot executable, skill, bilingual introduction, semantic diagrams, original Replay video/GIF and installation/migration documentation.
+- Compatibility for existing v1 journals, replay-owned checkpoint names, C++ aliases and profile-directory configuration.
 
-MCP 工具名称保持不变。升级后重启服务并刷新工具列表，以载入新的 profile 能力。
+## Downloads
 
-解压 ZIP 后，将 MCP 客户端配置为运行 `bin/desktop-pilot.exe serve`，并让它与目标应用处于同一 Windows 用户会话和输入桌面。需要 Windows x64 和 Microsoft Visual C++ 2015–2022 x64 Runtime。运行不需要 Node 或 Python。
+| Archive | Platform |
+|---|---|
+| `ComputerPilot-windows-x64-core.zip` | Windows x64; Microsoft Visual C++ 2015–2022 x64 Runtime required |
+| `ComputerPilot-macos-arm64-core.tar.gz` | macOS 14+, Apple Silicon; **unsigned and not notarized** |
 
-## 验证边界
+Verify the archives against `SHA256SUMS.txt`, extract to a new directory, and configure your MCP client to run `bin/computer-pilot[.exe] serve`. Keep the adjacent profiles, documentation and license files. Core needs no Node/Python runtime or model weights.
 
-执行成功不等于绘图质量合格：已删除逐图形像素抽样方案，批次后应查看画布截图。小尺寸原生 Paint 多边形仍有已知问题；扫描线绘图实验尚未集成为自动语义后端。任意后台应用输入、任意弹窗处理及锁屏绘图不在本版保证范围内。
+See [Installation](https://github.com/ClarkWain/ComputerPilot/blob/main/docs/INSTALLATION.md), [MCP setup](https://github.com/ClarkWain/ComputerPilot/blob/main/docs/MCP.md) and [Migration](https://github.com/ClarkWain/ComputerPilot/blob/main/docs/MIGRATION.md).
 
-本 Core 包包含程序、profile、Skill、示例和许可证，不包含模型权重或大型图标描述模型。截图默认 PNG（兼容所有宿主）；确认宿主支持 WebP 时设置 `DP_IMAGE_FORMAT=webp`（编码器已静态链接）以减少字节。
+## Execution boundaries
 
-使用 `SHA256SUMS.txt` 核验 ZIP；变更、构建与许可详见 `CHANGELOG.md`、`docs/BUILDING.md` 和 `THIRD_PARTY_NOTICES.md`。
+Use an unlocked interactive session; on macOS grant Accessibility and Screen Recording permission to the actual executable or launching host. A successful input receipt requires final application/result inspection. Unknown or partially dispatched input is never automatically replayed.
+
+macOS uses generic controls and basic input, without added Paint/Aseprite profiles. Aseprite pixel drawing and save semantics are not included. General orchestration remains on the historical research branch and is not part of these Core packages. Intel/universal macOS packages and Developer ID signing/notarization are future work.
+
+Original project code is MIT licensed; adapted code and third-party components retain their notices. No model weights are bundled.

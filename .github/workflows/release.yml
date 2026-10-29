@@ -17,17 +17,27 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: DesktopPilot-windows-x64-core
+          pattern: ComputerPilot-*-core
+          merge-multiple: true
           path: release-assets
-      - name: Validate version and publish
+      - name: Verify both platforms and publish
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          $ErrorActionPreference='Stop'
           $project = Get-Content CMakeLists.txt -Raw
-          if ($project -notmatch 'project\(DesktopPilot VERSION ([0-9]+\.[0-9]+\.[0-9]+)') { throw 'Missing project version' }
+          if ($project -notmatch 'project\(ComputerPilot VERSION ([0-9]+\.[0-9]+\.[0-9]+)') { throw 'Missing project version' }
           if ($env:RELEASE_TAG -ne "v$($Matches[1])") { throw 'Tag and CMake version differ' }
-          gh release create $env:RELEASE_TAG release-assets/DesktopPilot-windows-x64-core.zip release-assets/SHA256SUMS.txt --verify-tag --title "DesktopPilot $env:RELEASE_TAG" --notes-file .github/release-notes.md
+          $files=@('ComputerPilot-windows-x64-core.zip','ComputerPilot-macos-arm64-core.tar.gz')
+          $lines=@(Get-Content release-assets/SHA256SUMS-windows.txt; Get-Content release-assets/SHA256SUMS-macos.txt)
+          if($lines.Count -ne 2){throw 'Expected two archive checksums'}
+          foreach($file in $files){
+            $hash=(Get-FileHash "release-assets/$file" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if($lines -cnotcontains "$hash  $file"){throw "Archive checksum mismatch: $file"}
+          }
+          $lines | Set-Content -Encoding ascii release-assets/SHA256SUMS.txt
+          gh release create $env:RELEASE_TAG release-assets/ComputerPilot-windows-x64-core.zip release-assets/ComputerPilot-macos-arm64-core.tar.gz release-assets/SHA256SUMS.txt --verify-tag --title "ComputerPilot $env:RELEASE_TAG" --notes-file .github/release-notes.md
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

@@ -8,7 +8,7 @@
 
 - `ready:true`，`lockState:unlocked`，同一控制台用户会话。
 - Accessibility、事件发送、屏幕录制检查均通过，Secure Input 未启用。
-- 所有写入仅针对测试创建的 `DesktopPilot disposable macOS fixture`；结束后终止自己的测试进程。未调整用户已有窗口或修改用户文档/剪贴板。
+- 所有写入仅针对测试创建的 `ComputerPilot disposable macOS fixture`；结束后终止自己的测试进程。未调整用户已有窗口或修改用户文档/剪贴板。
 
 ## 已通过
 

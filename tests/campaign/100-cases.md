@@ -1,8 +1,8 @@
-# DesktopPilot 100-Case Real-Usage Campaign
+# ComputerPilot 100-Case Real-Usage Campaign
 
 Purpose: exercise the four public MCP tools against real Windows apps to widen coverage,
 surface reliability / design / token problems, and drive fixes. Executed by subagents
-(Claude) via the `desktop-pilot` MCP server; project lead monitors and optimizes.
+(Claude) via the `computer-pilot` MCP server; project lead monitors and optimizes.
 
 Legend for status: PASS / FAIL / PARTIAL / BLOCKED / SKIPPED. Findings tracked in `results.md`.
 
@@ -26,7 +26,7 @@ Global safety rules for every executor:
 - C10 second list_windows in same session → window_ids stable vs C01.
 
 ## Batch 2 — Notepad++ basic text input (N11–N20)
-- N11 type_text "Hello DesktopPilot" → verify via region screenshot.
+- N11 type_text "Hello ComputerPilot" → verify via region screenshot.
 - N12 press_keys Ctrl+A then type_text to replace whole buffer.
 - N13 press_keys End then Enter then type_text second line.
 - N14 press_keys Ctrl+Home then Ctrl+Shift+End (select all) → observe.

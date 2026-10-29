@@ -1,6 +1,6 @@
 # README 演示素材
 
-`docs/media/semantic-{circle,text,save}.png` 是流程示意图，展示一个已实现的应用语义动作如何封装多个界面操作。动作来自经典中文版 Paint profile；图中的步骤是说明性拆解，实际调用数取决于工具、颜色、布局和缓存状态，不能当作固定提速倍数。
+`docs/media/semantic-{circle,text,save}.png` 及对应的 `-en.png` 英文版本是流程示意图，展示一个已实现的应用语义动作如何封装多个界面操作。动作来自经典中文版 Paint profile；图中的步骤是说明性拆解，实际调用数取决于工具、颜色、布局和缓存状态，不能当作固定提速倍数。
 
 使用 Python 3 与 Pillow 重新生成：
 
@@ -36,3 +36,5 @@ ffmpeg -i flower-replay.mov \
 ```
 
 这段视频展示通用控件与基础输入驱动的 macOS Replay。语义示意图展示 Windows Paint 适配能力，两者是不同的演示场景。
+
+The video retains its pre-rename DesktopPilot window title; the recording itself has not been altered for branding.

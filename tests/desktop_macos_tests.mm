@@ -30,7 +30,7 @@
 @implementation DPFixture
 - (void)apply:(id)sender {self.result.stringValue=[@"Applied: " stringByAppendingString:self.field.stringValue];}
 - (void)openModal:(id)sender {
-    self.alert=[NSAlert new];self.alert.messageText=@"DesktopPilot test sheet";
+    self.alert=[NSAlert new];self.alert.messageText=@"ComputerPilot test sheet";
     [self.alert addButtonWithTitle:@"Continue"];
     [self.alert beginSheetModalForWindow:self.field.window completionHandler:^(NSModalResponse response) {}];
 }
@@ -46,7 +46,7 @@ int main(int argc,char** argv) {
             [edit addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
             editItem.submenu=edit;[menu addItem:editItem];NSApp.mainMenu=menu;
             auto window=[[NSWindow alloc] initWithContentRect:NSMakeRect(100,100,500,360) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
-            window.title=@"DesktopPilot disposable macOS fixture";
+            window.title=@"ComputerPilot disposable macOS fixture";
             __attribute__((objc_precise_lifetime)) DPFixture* target=[DPFixture new];target.field=[[NSTextField alloc] initWithFrame:NSMakeRect(30,270,400,30)];target.field.identifier=@"pilot-field";target.field.accessibilityLabel=@"Pilot text";
             target.result=[NSTextField labelWithString:@"Waiting"];target.result.frame=NSMakeRect(30,155,440,30);
             auto button=[NSButton buttonWithTitle:@"Apply" target:target action:@selector(apply:)];button.frame=NSMakeRect(30,210,100,30);
@@ -58,7 +58,7 @@ int main(int argc,char** argv) {
             // Reproduce Preview's overlapping document geometry. The backend
             // must distinguish the target by its compositor/AX title.
             __attribute__((objc_precise_lifetime)) NSWindow* overlap=[[NSWindow alloc] initWithContentRect:NSMakeRect(100,100,500,360) styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable backing:NSBackingStoreBuffered defer:NO];
-            overlap.title=@"DesktopPilot overlapping identity fixture";
+            overlap.title=@"ComputerPilot overlapping identity fixture";
             [window makeKeyAndOrderFront:nil];[NSApp activateIgnoringOtherApps:YES];
             [overlap setFrame:window.frame display:YES];[overlap orderBack:nil];
             [NSApp run];return 0;
@@ -70,7 +70,7 @@ int main(int argc,char** argv) {
             child=[NSTask new];child.executableURL=[NSURL fileURLWithPath:[NSString stringWithUTF8String:dp::executable_path().c_str()]];child.arguments=@[@"fixture"];
             NSError* error=nil;if(![child launchAndReturnError:&error])throw std::runtime_error("Cannot launch disposable fixture");
             auto require=[](bool yes,const char* reason){if(!yes)throw std::runtime_error(reason);};
-            dp::Json window;for(int i=0;i<50;++i){auto rows=service.execute("window.list",{{"pid",child.processIdentifier}})["windows"];for(const auto& row:rows)if(row.value("title",std::string{})=="DesktopPilot disposable macOS fixture") {
+            dp::Json window;for(int i=0;i<50;++i){auto rows=service.execute("window.list",{{"pid",child.processIdentifier}})["windows"];for(const auto& row:rows)if(row.value("title",std::string{})=="ComputerPilot disposable macOS fixture") {
                 // Compositor discovery can precede AX publication. Wait for a
                 // usable read before the test starts sending input.
                 try{service.execute("window.get",{{"windowRef",row["windowRef"]}});window=row;}
@@ -80,9 +80,9 @@ int main(int argc,char** argv) {
             auto before=service.execute("window.get",{{"windowRef",ref}})["bounds"];
             const auto fixtureWindows=service.execute("window.list",{{"pid",child.processIdentifier}})["windows"];
             bool overlapping=false;for(const auto& row:fixtureWindows)
-                if(row.value("title",std::string{})=="DesktopPilot overlapping identity fixture"&&row["bounds"]==before)overlapping=true;
+                if(row.value("title",std::string{})=="ComputerPilot overlapping identity fixture"&&row["bounds"]==before)overlapping=true;
             if(!overlapping)throw std::runtime_error("Identity fixture windows did not overlap: "+dp::dump_json(fixtureWindows));
-            for(const auto& row:fixtureWindows)if(row.value("title",std::string{})=="DesktopPilot overlapping identity fixture") {
+            for(const auto& row:fixtureWindows)if(row.value("title",std::string{})=="ComputerPilot overlapping identity fixture") {
                 service.execute("window.activate",{{"windowRef",row["windowRef"]}});
                 require(!service.execute("window.get",{{"windowRef",ref}}).value("foreground",true),"Overlapping windows were both reported focused");
             }

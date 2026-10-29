@@ -1,11 +1,11 @@
 # 原生动作回放（Replay v1）
 
-`desktop-pilot replay` 是 CLI 回放入口，运行不依赖 Python/Node。MCP 公开工具仍只有 `list_windows`、`get_window_state`、`execute_semantic`、`execute_batch`；执行器内部复用相同的 AgentApi 与独立 worker。
+`computer-pilot replay` 是 CLI 回放入口，运行不依赖 Python/Node。MCP 公开工具仍只有 `list_windows`、`get_window_state`、`execute_semantic`、`execute_batch`；执行器内部复用相同的 AgentApi 与独立 worker。
 
 默认只校验，不启动应用或发送输入：
 
 ```sh
-./build/core/desktop-pilot replay --file examples/replays/flower-preview/replay.json
+./build/core/computer-pilot replay --file examples/replays/flower-preview/replay.json
 ```
 
 实际执行必须显式指定 `--mode run --output 不存在的新目录`。当前 v1 执行支持 macOS 的新建 PNG 文档；Windows 可以校验配方，但尚未提供其执行入口。发行包中的配方位于 `examples/replays/flower-preview/`，程序位于 `bin/`。
@@ -27,10 +27,10 @@
 先执行到一组笔画结束，例如小花的第 14 步（花茎和两片叶子）：
 
 ```sh
-./build/core/desktop-pilot replay \
+./build/core/computer-pilot replay \
   --file examples/replays/flower-preview/replay.json \
   --mode run --output out/flower-checkpoint --stop-after 14
-./build/core/desktop-pilot replay-resume --from out/flower-checkpoint
+./build/core/computer-pilot replay-resume --from out/flower-checkpoint
 ```
 
 `--stop-after` 是配方中已完成步骤的绝对数量，必须位于一整组 `draw` 之后且早于最后一步。暂停成功返回退出码 0、`status:paused`，保存当前 PNG 与 `checkpoint.json`；保存完成必须由应用的 `AXEdited:false` 回读确认。检查点保存有额外的 Command+S，不计入配方步骤数。当前仅实现 macOS 执行入口。
@@ -73,7 +73,7 @@ Selector 支持精确的 `role`，加 `name` 或 `{bounds:{width,height}}`。名
 
 每步必须有非空 `name`。未知类型/字段、旧会话引用、越界点、无效按键、无效颜色等会在任何输入前拒绝。单文件上限 8 MiB、单画布最多 6400 万像素、最多 128 条存储笔画及 10 万个存储点；整个配方最多派发 512 条笔画。
 
-`reference.png` 是示例的成品对照，回放不读取或导入它。可通过 `--record 新目录` 录制 DesktopPilot 实际执行的调用，再离线导出可回放配方，见 [操作录制](RECORDING.md)。Replay v1 不包含屏幕录像、全局手动输入录制、时间轴编辑或通用应用适配；输入前仍受当前会话和目标窗口检查。
+`reference.png` 是示例的成品对照，回放不读取或导入它。可通过 `--record 新目录` 录制 ComputerPilot 实际执行的调用，再离线导出可回放配方，见 [操作录制](RECORDING.md)。Replay v1 不包含屏幕录像、全局手动输入录制、时间轴编辑或通用应用适配；输入前仍受当前会话和目标窗口检查。
 
 ## 测试
 

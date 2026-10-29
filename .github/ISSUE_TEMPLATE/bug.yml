@@ -1,0 +1,22 @@
+name: Bug report
+description: Report a reproducible execution, observation or installation problem.
+body:
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: ComputerPilot version, OS/version, CPU architecture, target application/version and display scaling.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction and expected result
+      description: Minimal steps, expected behavior and actual behavior. State whether input may already have happened.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted diagnostics
+      description: Relevant error code, preflight reasons or screenshots. Remove credentials, document content and personal paths. Report vulnerabilities privately using SECURITY.md.

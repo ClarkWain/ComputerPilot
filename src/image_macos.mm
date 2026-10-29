@@ -133,7 +133,7 @@ Image draw_overlay(const Image& image,std::span<const Detection> items) {
 Image make_fixture() {
     @autoreleasepool {
         Canvas c(Image{960,640,std::vector<uint8_t>(960*640*3,246)});
-        c.rect(0,0,960,60,27,35,50,true);c.text(26,17,@"DesktopPilot / Local UI Fixture",23,NSColor.whiteColor);
+        c.rect(0,0,960,60,27,35,50,true);c.text(26,17,@"ComputerPilot / Local UI Fixture",23,NSColor.whiteColor);
         c.text(54,92,@"Create a song",32,NSColor.blackColor);c.text(54,149,@"Title / 歌曲标题",19,NSColor.darkGrayColor);
         c.rect(54,180,600,46,150,160,175);c.text(68,190,@"Evening train / 晚班列车",20,NSColor.blackColor);
         c.text(54,251,@"Lyrics / 歌词",19,NSColor.darkGrayColor);c.rect(54,283,600,168,150,160,175);

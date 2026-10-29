@@ -6,7 +6,7 @@ try {
     $client=Open-Pilot $Executable
     $connection=$client.Initialization._meta.'desktopPilot/desktopPreflight'
     if(-not $connection.ready){throw ($connection|ConvertTo-Json -Depth 20 -Compress)}
-    $exe=Join-Path (Split-Path (Resolve-Path $Executable)) 'desktop-pilot-onboarding.exe'
+    $exe=Join-Path (Split-Path (Resolve-Path $Executable)) 'computer-pilot-onboarding.exe'
     $fixture=Start-Process -FilePath $exe -WindowStyle Hidden -PassThru
     [void]$fixture.WaitForInputIdle(5000)
     $selected=Call-Pilot $client 'list_windows' @{}
@@ -31,7 +31,7 @@ try {
         if($before.foreground){throw 'Test did not actually remove target focus.'}
     }
     $result=Call-Pilot $client 'execute_batch' @{window_id=$window_id;actions=@(
-        @{type='fill_text';control_id=$edit[0].control_id;text='Hello DesktopPilot'},
+        @{type='fill_text';control_id=$edit[0].control_id;text='Hello ComputerPilot'},
         @{type='click';control_id=$apply[0].control_id}
     )}
     # The consumed observation is internal; replay without inspecting is rejected.
@@ -40,11 +40,11 @@ try {
     $until=[DateTime]::UtcNow.AddSeconds(3)
     do {
         $after=Call-Pilot $client 'get_window_state' @{window_id=$window_id;mode='controls'}
-        $matched=@($after.controls|Where-Object name -eq 'Applied: Hello DesktopPilot').Count -eq 1
+        $matched=@($after.controls|Where-Object name -eq 'Applied: Hello ComputerPilot').Count -eq 1
         if(-not $matched){Start-Sleep -Milliseconds 100}
     } while(-not $matched -and [DateTime]::UtcNow -lt $until)
     if(-not $matched){throw 'Input dispatched but application result was not verified. Do not resubmit blindly.'}
-    @{status='passed';fieldsVerified=$result.fieldsVerified;applicationResult='Applied: Hello DesktopPilot';
+    @{status='passed';fieldsVerified=$result.fieldsVerified;applicationResult='Applied: Hello ComputerPilot';
       staleObservationRejected=$true;focusRecoveryTested=[bool]$TestFocusRecovery;elapsedMs=$timer.ElapsedMilliseconds}|ConvertTo-Json
 } finally {
     if($distractor){if(-not $distractor.HasExited){[void]$distractor.CloseMainWindow();if(-not $distractor.WaitForExit(2000)){$distractor.Kill()}};$distractor.Dispose()}

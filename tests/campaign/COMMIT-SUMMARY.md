@@ -1,4 +1,4 @@
-# Commit summary — DesktopPilot reliability fixes (session)
+# Commit summary — ComputerPilot reliability fixes (session)
 
 > **Do NOT `git commit` blindly.** These source files already contained *uncommitted* changes
 > before this session (the user's prior in-progress work). `git diff` therefore mixes those

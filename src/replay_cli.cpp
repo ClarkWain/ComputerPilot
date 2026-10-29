@@ -161,7 +161,7 @@ int replay_cli(const std::filesystem::path& file,const std::filesystem::path& ou
     // user windows and the recipe's reference artwork are never selected by title.
     if(!std::filesystem::create_directories(destination))throw std::invalid_argument("Replay output directory was created concurrently");
     const auto ticket=std::to_string(process_id())+"-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
-    const auto document=destination/("DesktopPilot-replay-"+ticket+".png");
+    const auto document=destination/("ComputerPilot-replay-"+ticket+".png");
     const auto started=std::chrono::steady_clock::now();
     Json report={{"status","error"},{"dispatch","not_started"},{"outputDirectory",utf8(destination.wstring())},
         {"document",utf8(document.wstring())},{"recipe",utf8(std::filesystem::absolute(file).wstring())},{"automaticRetry",false}};

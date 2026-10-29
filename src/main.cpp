@@ -53,7 +53,7 @@ Json capabilities() {
 #else
     constexpr bool replay_execution=false;
 #endif
-    return {{"name","DesktopPilot"},{"version",DP_PROJECT_VERSION},{"transport","cli"},{"pythonRequired",false},
+    return {{"name","ComputerPilot"},{"version",DP_PROJECT_VERSION},{"transport","cli"},{"pythonRequired",false},
         {"operations",{{"image.decode",true},{"image.fixture",true},{"vision.detect",Detector::available()},
         {"vision.overlay",true},{"vision.ocr",Ocr::available()},{"vision.textAssociation",true},{"ui.fusion",true},{"desktop.capture",true},{"input.click",true},{"mcp",true},{"replay.validate",true},{"replay.run",replay_execution},{"replay.resume",replay_execution},{"recording.calls",true},{"recording.export",true}}}};
 }
@@ -61,7 +61,7 @@ Json capabilities() {
 DP_MAIN(pilot_main) {
     try {
         if(argc<2 || std::wstring(argv[1])==L"--help") {
-            std::cout<<"DesktopPilot native screenshot parser\n"
+            std::cout<<"ComputerPilot native computer-use engine\n"
                 "  capabilities\n  fixture --output FILE.png\n"
                 "  parse --image FILE --model FILE.pt [--output FILE.json] [--overlay FILE.png]\n"
                 "        [--size 640] [--confidence 0.25] [--iou 0.7] [--threads 4] [--max-detections 300]\n"

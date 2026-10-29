@@ -157,7 +157,7 @@ Image draw_overlay(const Image& image,std::span<const Detection> items) {
 }
 Image make_fixture() {
     Image image{960,640,std::vector<uint8_t>(960*640*3,246)}; Canvas c(image);
-    c.rect(0,0,960,60,RGB(27,35,50),true); c.text(26,17,L"DesktopPilot / Local UI Fixture",23,RGB(255,255,255));
+    c.rect(0,0,960,60,RGB(27,35,50),true); c.text(26,17,L"ComputerPilot / Local UI Fixture",23,RGB(255,255,255));
     c.text(54,92,L"Create a song",32,RGB(25,30,45)); c.text(54,149,L"Title / 歌曲标题",19,RGB(65,70,85));
     c.rect(54,180,600,46,RGB(150,160,175)); c.text(68,190,L"Evening train / 晚班列车",20,RGB(30,40,55));
     c.text(54,251,L"Lyrics / 歌词",19,RGB(65,70,85)); c.rect(54,283,600,168,RGB(150,160,175));

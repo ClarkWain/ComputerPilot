@@ -1,6 +1,6 @@
-# DesktopPilot 与 Computer Use 协议及 Agent 接口对比
+# ComputerPilot 与 Computer Use 协议及 Agent 接口对比
 
-> 历史分析：下文记录旧版接口。当前 DesktopPilot 已收敛为四个工具，computer_*、独立等待和 before/after 不再提供。现行用法以 [MCP.md](MCP.md) 为准。
+> 历史分析：下文记录旧版接口。当前 ComputerPilot 已收敛为四个工具，computer_*、独立等待和 before/after 不再提供。现行用法以 [MCP.md](MCP.md) 为准。
 
 
 > 历史基线：本文对比重构前的接口。现已增加 desktop_* 常用层；当前用法以 README、MCP.md 和 AGENT-API.md 为准，第 7 节的部分建议已开始实现。
@@ -9,9 +9,9 @@
 
 ## 1. 结论与对比范围
 
-DesktopPilot 当前具备结构化窗口查询、窗口绑定输入、条件批处理、字段回读、执行环境诊断和实验性应用语义，但默认入口仍让 Agent 处理较多底层细节。Computer Use 的本机 `sky` API 更集中于明确的目标窗口与观察状态，减少了调用时的选择和换算负担。
+ComputerPilot 当前具备结构化窗口查询、窗口绑定输入、条件批处理、字段回读、执行环境诊断和实验性应用语义，但默认入口仍让 Agent 处理较多底层细节。Computer Use 的本机 `sky` API 更集中于明确的目标窗口与观察状态，减少了调用时的选择和换算负担。
 
-建议保留 DesktopPilot 的 C++ 执行器与 MCP，增加面向 Agent 的简单接口，并把可靠的应用操作封装到中间层。无需为了模仿 Computer Use 改用 Node 实现核心，也不能期待只改方法名称就解决绘图问题。
+建议保留 ComputerPilot 的 C++ 执行器与 MCP，增加面向 Agent 的简单接口，并把可靠的应用操作封装到中间层。无需为了模仿 Computer Use 改用 Node 实现核心，也不能期待只改方法名称就解决绘图问题。
 
 本文对比的 Computer Use 是本机安装插件 **26.908.70816** 中的 `@oai/sky`、`window2` API 及其使用指南。它不等同于所有 OpenAI Computer Use 产品，也不代表公开 API、其它客户端版本或其内部传输协议。本机另一个 `cua_repl` 接口不纳入此表。
 
@@ -21,7 +21,7 @@ DesktopPilot 当前具备结构化窗口查询、窗口绑定输入、条件批�
 
 ## 2. 先区分三个层次
 
-| 层次 | DesktopPilot | 本机 Computer Use |
+| 层次 | ComputerPilot | 本机 Computer Use |
 |---|---|---|
 | 通讯与生命周期 | MCP JSON-RPC 2.0 stdio、原生 JSONL、直接 C++ 库；可用持久进程或文件通道 | Agent 从持久 JavaScript 会话导入 `@oai/sky`；底层线协议不在本次公开文档范围内 |
 | Agent 可调用接口 | 七个 MCP 工具，主要接收 `operation`、开放结构的 `args`；另有语义入口 | `list_apps`、`get_window_state`、`click`、`press_key` 等明确方法及类型 |
@@ -31,7 +31,7 @@ DesktopPilot 当前具备结构化窗口查询、窗口绑定输入、条件批�
 
 ```mermaid
 flowchart LR
-  A[Agent] --> D[DesktopPilot MCP 工具]
+  A[Agent] --> D[ComputerPilot MCP 工具]
   D --> R[操作注册表与条件批处理]
   R --> N[C++ Windows 执行器]
   A --> S[Computer Use sky API]
@@ -42,14 +42,14 @@ flowchart LR
 
 ## 3. 当前接口对照
 
-| 维度 | DesktopPilot 当前实现 | Computer Use 本机公开接口 | 对 Agent 的影响 |
+| 维度 | ComputerPilot 当前实现 | Computer Use 本机公开接口 | 对 Agent 的影响 |
 |---|---|---|---|
-| 入口发现 | 配置 MCP；否则找到二进制并使用 serve/jsonl；已有 skill 安装提示 | 导入指定包，再列应用/窗口 | 未配置 MCP 的 DesktopPilot 会增加启动与通讯工作 |
+| 入口发现 | 配置 MCP；否则找到二进制并使用 serve/jsonl；已有 skill 安装提示 | 导入指定包，再列应用/窗口 | 未配置 MCP 的 ComputerPilot 会增加启动与通讯工作 |
 | 初始化 | MCP initialize → initialized 通知；文件通道每次重启服务 | 初始化一次 sky 对象，持久会话保存窗口与状态 | 持久连接可减少重复发现和引用失效 |
 | 工具结构 | runtime/query/inspect/act/batch/wait/semantic 七个工具 | 面向操作的方法和明确输入类型 | 工具数量少不等于学习成本低；operation/args 仍须查注册表 |
-| 参数 schema | 通用工具的 args 为 object，批次 step 也较宽泛，主要由运行时校验 | click、drag、press_key 等各自明确字段 | DesktopPilot 对字段拼写、组合和按键格式的提前指导不足 |
+| 参数 schema | 通用工具的 args 为 object，批次 step 也较宽泛，主要由运行时校验 | click、drag、press_key 等各自明确字段 | ComputerPilot 对字段拼写、组合和按键格式的提前指导不足 |
 | 窗口选择 | window.list、window.get 等返回 windowRef | list_apps/list_windows 返回 Window，get_window 可重新获取 | 两者都要求从实际结果选择目标，不能猜造引用 |
-| 输入窗口绑定 | 相对输入必须带 windowRef；旧式屏幕输入仍可省略 | 各输入方法要求 window | DesktopPilot 默认可走不绑定窗口的路径，本次失败实际使用了它 |
+| 输入窗口绑定 | 相对输入必须带 windowRef；旧式屏幕输入仍可省略 | 各输入方法要求 window | ComputerPilot 默认可走不绑定窗口的路径，本次失败实际使用了它 |
 | 默认坐标 | 原生输入默认 screen_physical；可选 window_relative/client_relative/image_pixels | click/drag 为窗口相对坐标 | 统一窗口坐标可降低手动加减窗口原点的错误 |
 | DPI 与像素 | 窗口/客户区相对坐标以物理像素定义；图像映射由 imageRef 支持 | API 定义窗口相对位置，截图元数据含逻辑尺寸与原点 | 不应假定单位相同；兼容层必须明确转换契约 |
 | 状态获取 | window.get、ui.tree/find、capture.window 等分开；可组合，inspect.hybrid 另有模型参数 | get_window_state 统一返回窗口、可访问性信息和截图集合 | 统一轻量状态入口更易形成稳定工作循环 |
@@ -58,20 +58,20 @@ flowchart LR
 | 焦点处理 | 绑定输入要求目标已在前台，默认不自动抢焦点 | 文档说明输入会自动激活目标窗口 | 前者显式、后者调用省事；需要考虑用户同时操作的干扰 |
 | 键盘表达 | input.key_chord 使用 keys 数组与实现支持的键名 | press_key 使用组合字符串并接受常见别名 | 统一别名和清晰错误能减少无效重试 |
 | 文本填写 | ui.fill/ui.fill_form 可替换、回读；原始 type_text 只负责输入 | type_text 面向当前焦点；set_value 面向可编辑元素 | 两者都不能将“已输入”直接理解为应用已接受 |
-| 批处理 | 内建顺序步骤、step refs、默认参数、延迟、前后条件、失败停止 | 本机 API 列表未公开同等条件批处理接口；指南要求单步后观察 | DesktopPilot 适合稳定动作序列，但前提未核验时会放大错误 |
+| 批处理 | 内建顺序步骤、step refs、默认参数、延迟、前后条件、失败停止 | 本机 API 列表未公开同等条件批处理接口；指南要求单步后观察 | ComputerPilot 适合稳定动作序列，但前提未核验时会放大错误 |
 | 内部等待 | computer_wait 和 before/after 支持只读条件轮询 | 本次 API 文档未公开对应通用条件等待接口 | 可以减少 Agent 轮询；不要以“未公开”断言完全不支持 |
-| 结果输出 | structuredContent/等价文本、summary/last/all、可选 metrics | 方法返回 WindowState 或完成/异常等 | DesktopPilot 可精简输出，但调用方需正确解读执行与验收边界 |
+| 结果输出 | structuredContent/等价文本、summary/last/all、可选 metrics | 方法返回 WindowState 或完成/异常等 | ComputerPilot 可精简输出，但调用方需正确解读执行与验收边界 |
 | 失败与去重 | 同会话 requestId 去重、action.status、取消/超时、部分完成信息 | 指南强调未知结果先重新观察；同等级去重语义未在所读 API 中公开 | 跨会话 exactly-once 不能假定；重试前必须确认是否已经生效 |
-| 桌面诊断 | doctor、system.preflight，启动提示；serve/jsonl 在环境不适用时阻止桌面派发 | 所读 API 未提供同名显式诊断方法 | DesktopPilot 已将环境问题变成结构化前置条件 |
+| 桌面诊断 | doctor、system.preflight，启动提示；serve/jsonl 在环境不适用时阻止桌面派发 | 所读 API 未提供同名显式诊断方法 | ComputerPilot 已将环境问题变成结构化前置条件 |
 | 应用语义 | 经典 Paint 实验性 profile；当前没有 Aseprite 专用绘图动作 | 所读 API 提供通用桌面动作，无 Aseprite 专用语义 | 复杂应用的可靠步骤仍需适配层或模型自行完成 |
 
-说明：DesktopPilot 的全局桌面预检并没有取消旧式、未绑定窗口的屏幕输入。前者检查执行环境，后者关系到具体输入目标，是两项不同检查。
+说明：ComputerPilot 的全局桌面预检并没有取消旧式、未绑定窗口的屏幕输入。前者检查执行环境，后者关系到具体输入目标，是两项不同检查。
 
 ## 4. 同一操作的表达差异
 
 下面只展示接口形状，窗口引用、截图和坐标必须来自当前观察，不可直接照抄执行。
 
-### DesktopPilot：当前 MCP 操作参数
+### ComputerPilot：当前 MCP 操作参数
 
 ```json
 {
@@ -106,7 +106,7 @@ await sky.click({
 
 ## 5. luna 冷启动失败：协议暴露了什么问题
 
-测试配置为 gpt-5.6-luna、medium、不继承历史，使用已安装 skill 和小鸟参考图，通过 DesktopPilot 操作 Aseprite。以下是一次实际观察，不是模型总体能力结论。
+测试配置为 gpt-5.6-luna、medium、不继承历史，使用已安装 skill 和小鸟参考图，通过 ComputerPilot 操作 Aseprite。以下是一次实际观察，不是模型总体能力结论。
 
 ### 已确认事实
 
@@ -136,7 +136,7 @@ await sky.click({
 | 数百步后才发现错误 | 条件批处理 | 在状态转换处检查；稳定笔画内部高效批量执行 |
 | 模型仍需理解绘画结构 | 内容规划与视觉验收 | 独立审查像素计划与参考图，不用执行成功替代美术判断 |
 
-## 6. 借鉴 Computer Use 的部分与保留 DesktopPilot 的部分
+## 6. 借鉴 Computer Use 的部分与保留 ComputerPilot 的部分
 
 应借鉴：明确的目标窗口、较少的坐标选择、统一观察入口、可关联观察的动作、清楚的按键别名、持久会话和具体参数类型。这些设计减少模型需要自行维护的状态。
 
@@ -187,12 +187,12 @@ Agent 提供尺寸、调色板、行网格或像素段。中间层负责核验�
 
 ## 9. 依据与相关资料
 
-DesktopPilot 可审计来源：
+ComputerPilot 可审计来源：
 
 - [MCP 接入](MCP.md)、[协议与执行语义](PROTOCOL.md)、[操作参考](../OPERATIONS.md)。
 - [窗口绑定与条件批处理](../BATCH-RELIABILITY.md)、[语义适配及验证范围](SEMANTIC-PROFILES.md)。
 - [MCP 工具 schema 与分发](../src/server.cpp)、[注册表与图像映射](../src/service.cpp)、[窗口检查与原生输入](../src/desktop_windows.cpp)、[桌面预检](../src/preflight.cpp)。
-- [Agent skill](../skills/desktoppilot/SKILL.md)、[Aseprite 指导](../skills/desktoppilot/references/aseprite.md)、[入门示例](../examples/onboarding/README.md)。
+- [Agent skill](../skills/computerpilot/SKILL.md)、[Aseprite 指导](../skills/computerpilot/references/aseprite.md)、[入门示例](../examples/onboarding/README.md)。
 
 Computer Use 来源为本机插件 `computer-use/26.908.70816` 包内的 `skills/computer-use/SKILL.md`、`docs/api.md` 和 `docs/guidance.md`。这里只引用接口名称并概述其契约，未复制实现，也未审计内部线协议。插件升级后需要重新核对。
 

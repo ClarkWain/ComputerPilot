@@ -9,7 +9,7 @@
 在仓库根目录运行，不启动应用、不创建文件、不发送输入：
 
 ```sh
-./build/core/desktop-pilot replay --file examples/replays/flower-preview/replay.json
+./build/core/computer-pilot replay --file examples/replays/flower-preview/replay.json
 ```
 
 ## 实际回放
@@ -17,7 +17,7 @@
 先解锁电脑，确保实际 worker 的辅助功能、输入与屏幕录制权限可用。`--output` 必须是不存在的新目录：
 
 ```sh
-./build/core/desktop-pilot replay \
+./build/core/computer-pilot replay \
   --file examples/replays/flower-preview/replay.json \
   --mode run \
   --output out/my-flower-replay
@@ -34,11 +34,11 @@
 可在完整笔画组后暂停，并在同一文档上继续：
 
 ```sh
-./build/core/desktop-pilot replay \
+./build/core/computer-pilot replay \
   --file examples/replays/flower-preview/replay.json \
   --mode run --output out/split-flower --stop-after 14
-./build/core/desktop-pilot replay-resume --from out/split-flower --stop-after 20
-./build/core/desktop-pilot replay-resume --from out/split-flower
+./build/core/computer-pilot replay-resume --from out/split-flower --stop-after 20
+./build/core/computer-pilot replay-resume --from out/split-flower
 ```
 
 这三个阶段分别累计完成 3、11、12 条笔画。保持文档打开及工具、笔宽、选区现场；文件和可观察状态不匹配时拒绝续跑，完成的运行也不能再次续跑。未知/部分执行的失败不能强行跳过。检查点和报告说明见 [Replay](../../../docs/REPLAY.md#检查点暂停与续跑)。
@@ -49,7 +49,7 @@
 - 白色画布 1000×800；当前可见 AXImage 也须为 1000×800 点，拒绝在缩放不匹配时继续画。
 - 配方通过控件名称/角色和调色板网格尺寸重新定位；颜色选择后先回读透明色名称或 RGBA，未达到预期就停止。
 - 没有录入旧 window_id、control_id、imageRef 或 Agent 状态编号。窗口移动时，笔画以重新观察到的画布原点定位。
-- 配方保存结构化动作流程；演示 GIF 由实际运行时的窗口录像转换。DesktopPilot 调用录制并非全局人机操作录制器，界面版本/语言变化可能导致定位失败。
+- 配方保存结构化动作流程；演示 GIF 由实际运行时的窗口录像转换。ComputerPilot 调用录制并非全局人机操作录制器，界面版本/语言变化可能导致定位失败。
 
 格式与限制见 [Replay 文档](../../../docs/REPLAY.md)。
 

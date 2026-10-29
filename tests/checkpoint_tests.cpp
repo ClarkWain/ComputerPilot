@@ -12,7 +12,7 @@ int main(int argc,char** argv) {
     try {
         if(argc!=2)throw std::runtime_error("Expected flower recipe");std::ifstream input(argv[1]);const auto recipe=Json::parse(input);
         std::filesystem::create_directories(root/"checkpoints");write_json(root/"recipe.json",recipe);
-        const auto document=root/"DesktopPilot-replay-owned.png",canvas=root/"checkpoints/canvas.png";
+        const auto document=root/"ComputerPilot-replay-owned.png",canvas=root/"checkpoints/canvas.png";
         save_png(Image{5,4,std::vector<uint8_t>(5*4*3,255)},document);std::filesystem::copy_file(document,canvas);
         Json state={{"controls",Json::array({
             Json{{"role","AXImage"},{"name",""},{"control_id","old-canvas"},{"bounds",{10,100,1000,800}}},
@@ -28,6 +28,10 @@ int main(int argc,char** argv) {
             {"observableState",observed},{"completedSteps",14},{"completedStrokes",3}};
         auto load=[&](const Json& value){write_checkpoint_atomic(root/"checkpoint.json",value);return load_replay_checkpoint(root);};
         require(load(checkpoint)["checkpoint"]["completedSteps"]==14,"valid checkpoint could not be loaded offline");
+        const auto legacyDocument=root/"DesktopPilot-replay-legacy.png";
+        std::filesystem::copy_file(document,legacyDocument);
+        auto legacy=checkpoint;legacy["document"]=legacyDocument.filename().string();
+        require(load(legacy)["checkpoint"]["completedSteps"]==14,"legacy DesktopPilot checkpoint was rejected after rename");
         for(const auto status:{"in_progress","complete"}){auto bad=checkpoint;bad["status"]=status;rejects([&]{load(bad);},"unknown/completed checkpoint was resumable");}
         auto bad=checkpoint;bad["completedSteps"]=15;rejects([&]{load(bad);},"checkpoint stopped inside a toolbar sequence");
         bad=checkpoint;bad["completedStrokes"]=4;rejects([&]{load(bad);},"checkpoint cursor and stroke count disagreed");

@@ -1,6 +1,6 @@
-# DesktopPilot 100-Case Campaign — Results & Findings
+# ComputerPilot 100-Case Campaign — Results & Findings
 
-Executor: subagents (Claude) via the `desktop-pilot` MCP server. Lead: monitoring + fixes.
+Executor: subagents (Claude) via the `computer-pilot` MCP server. Lead: monitoring + fixes.
 Environment: Windows @ 150% scaling (144 DPI), classic zh Paint, Notepad++, Calculator, Edge/Chrome.
 
 ## Executive summary

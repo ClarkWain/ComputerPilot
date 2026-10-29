@@ -36,7 +36,7 @@
 | runtime.describe / runtime.capabilities | `{}` |
 | action.status | `id:string`；查询本会话 requestId 的回执 |
 
-`CTRL, SHIFT, ALT, WIN, ENTER, TAB, ESC, BACKSPACE, DELETE, LEFT, RIGHT, UP, DOWN, HOME, END, SPACE` 以及大写 A-Z、0-9 可用于组合键。鼠标操作支持 modifiers。各 DesktopPilot 会话通过同一交互会话的命名互斥量串行派发键鼠输入。
+`CTRL, SHIFT, ALT, WIN, ENTER, TAB, ESC, BACKSPACE, DELETE, LEFT, RIGHT, UP, DOWN, HOME, END, SPACE` 以及大写 A-Z、0-9 可用于组合键。鼠标操作支持 modifiers。各 ComputerPilot 会话通过同一交互会话的命名互斥量串行派发键鼠输入。
 
 输入可附 `coordinateSpace:"image_pixels", imageRef:<本会话 capture 返回引用>`。窗口移动后该截图映射会失效；服务在输入前返回 `stale_image_geometry`。截图解析得到的候选坐标不是自动确认的命中点。
 
@@ -62,7 +62,7 @@ MCP 批量语义和基础输入分别见 [应用语义](docs/SEMANTIC-PROFILES.m
 
 先轻量筛选控件，再按需读取匹配结果的模式和点击点。查询保持原遍历顺序，不自动使用缓存的旧页面内容。
 
-生产接入直接启动 `desktop-pilot.exe serve`，通过 UTF-8 标准输入输出保持连接；无需 Node，也不建议套 PTY，以免回显、控制字符和中文编码干扰。已有 mcp.json 是连接示例，不表示已经安装到当前 Agent。
+生产接入直接启动 `computer-pilot.exe serve`，通过 UTF-8 标准输入输出保持连接；无需 Node，也不建议套 PTY，以免回显、控制字符和中文编码干扰。已有 mcp.json 是连接示例，不表示已经安装到当前 Agent。
 
 ## 可靠填写与原生文件通道
 
@@ -84,7 +84,7 @@ MCP 批量语义和基础输入分别见 [应用语义](docs/SEMANTIC-PROFILES.m
 原生可执行文件支持直接读取 UTF-8（无 BOM）请求文件并把响应写入文件，长请求不再穿过终端输入缓冲区：
 
 ```powershell
-& ./desktop-pilot.exe serve --input requests.jsonl --output responses.jsonl
+& ./computer-pilot.exe serve --input requests.jsonl --output responses.jsonl
 ```
 
 serve 请求文件先放 initialize 和 notifications/initialized，再放 tools/call；jsonl 模式则每行直接写 id/operation/args。文件里的换行文本应是 JSON 转义后的 \n。输入输出不能指向同一文件。进程退出码代表传输执行情况，仍须检查每条响应的 error/isError/verification。
@@ -126,4 +126,4 @@ ui.message_text 的 Backspace 和 Enter 现在按 WM_KEYDOWN → WM_CHAR（退�
 
 **同一 Windows 用户会话、同一输入桌面、可用执行令牌是桌面操作前提。** 先 `system.preflight`，`ready:false` 时不要发 UI 输入。`doctor` 提供独立 CLI 诊断；MCP 初始化与能力发现也会返回实际 worker 的诊断。
 
-`system.preflight` 无参数，返回 `ready/status/attentionRequired/code/reasons/session/message/nextAction`。桌面错位、锁屏、输入桌面不可访问、Session 0、受限令牌、作业 UI 限制或关键证据缺失都会提示未就绪。MCP/jsonl 桌面操作会停止在派发前，返回 `desktop_environment_not_ready`；诊断调用仍允许。不要把派发成功当作执行成功。详见 [MCP](docs/MCP.md) 和 [故障处理](skills/desktoppilot/references/troubleshooting.md)。
+`system.preflight` 无参数，返回 `ready/status/attentionRequired/code/reasons/session/message/nextAction`。桌面错位、锁屏、输入桌面不可访问、Session 0、受限令牌、作业 UI 限制或关键证据缺失都会提示未就绪。MCP/jsonl 桌面操作会停止在派发前，返回 `desktop_environment_not_ready`；诊断调用仍允许。不要把派发成功当作执行成功。详见 [MCP](docs/MCP.md) 和 [故障处理](skills/computerpilot/references/troubleshooting.md)。

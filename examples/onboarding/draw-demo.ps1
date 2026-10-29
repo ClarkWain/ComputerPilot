@@ -7,8 +7,8 @@ try {
     $client=Open-Pilot $Executable
     $preflight=$client.Initialization._meta.'desktopPilot/desktopPreflight'
     if(-not $preflight.ready){throw ($preflight|ConvertTo-Json -Depth 20 -Compress)}
-    $fixtureExe=Join-Path (Split-Path (Resolve-Path $Executable)) 'desktop-pilot-onboarding.exe'
-    if(-not (Test-Path -LiteralPath $fixtureExe)){throw 'Build/package desktop-pilot-onboarding.exe first.'}
+    $fixtureExe=Join-Path (Split-Path (Resolve-Path $Executable)) 'computer-pilot-onboarding.exe'
+    if(-not (Test-Path -LiteralPath $fixtureExe)){throw 'Build/package computer-pilot-onboarding.exe first.'}
     # The helper starts hidden; its only UI is the deliberate disposable test canvas.
     $fixture=Start-Process -FilePath $fixtureExe -WindowStyle Hidden -PassThru
     [void]$fixture.WaitForInputIdle(5000)

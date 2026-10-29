@@ -4,7 +4,7 @@
 
 int main() {
     // A never-shown fixture: no global input, focus change, or clipboard access.
-    HWND parent = CreateWindowExW(0, L"STATIC", L"DesktopPilot message test", 0,
+    HWND parent = CreateWindowExW(0, L"STATIC", L"ComputerPilot message test", 0,
                                   0, 0, 400, 200, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
     HWND edit = CreateWindowExW(0, L"EDIT", L"abc测试", WS_CHILD | ES_MULTILINE | ES_WANTRETURN,
                                 0, 0, 300, 100, parent, nullptr, GetModuleHandleW(nullptr), nullptr);

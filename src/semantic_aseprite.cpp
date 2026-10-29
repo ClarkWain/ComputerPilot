@@ -30,12 +30,12 @@ namespace {
 std::filesystem::path resolve_ocr_models(const Json& profile) {
     // Priority: explicit override in the profile-level "ocrModels" field
     // (used as-is so tests / packaging can inject a path without a filesystem
-    // check), then DESKTOPPILOT_OCR_MODELS env var, then the "models/ocr"
+    // check), then COMPUTERPILOT_OCR_MODELS env var, then the "models/ocr"
     // directory found by walking up from the executable, which is what the
     // CMake install layout produces.
     if (profile.contains("ocrModels") && profile.at("ocrModels").is_string())
         return std::filesystem::path{profile.at("ocrModels").get<std::string>()};
-    const auto configured=environment_path("DESKTOPPILOT_OCR_MODELS");
+    const auto configured=environment_path("COMPUTERPILOT_OCR_MODELS");
     if(!configured.empty() && std::filesystem::is_regular_file(configured/"det.onnx") &&
        std::filesystem::is_regular_file(configured/"rec.onnx"))return configured;
     auto dir=executable_path().parent_path();
@@ -46,7 +46,7 @@ std::filesystem::path resolve_ocr_models(const Json& profile) {
     }
     throw std::runtime_error(
         "ocr_models_unavailable: place det.onnx and rec.onnx under models/ocr, "
-        "set DESKTOPPILOT_OCR_MODELS, or add \"ocrModels\" to the profile");
+        "set COMPUTERPILOT_OCR_MODELS, or add \"ocrModels\" to the profile");
 }
 
 std::string lower(std::string s) {
@@ -330,7 +330,7 @@ Json run_aseprite_vision(const Json& request, const Json& profile, const Semanti
         if (menu_h <= 0 || menu_h > win_h / 2)
             throw std::runtime_error("menu_bar_height_out_of_range");
         auto tmp_dir = std::filesystem::temp_directory_path();
-        auto tmp_file = tmp_dir / (L"desktop-pilot-aseprite-menu-" +
+        auto tmp_file = tmp_dir / (L"computer-pilot-aseprite-menu-" +
                                    std::to_wstring(std::chrono::steady_clock::now()
                                                        .time_since_epoch()
                                                        .count()) +

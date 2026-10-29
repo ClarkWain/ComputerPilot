@@ -44,11 +44,11 @@ LRESULT CALLBACK proc(HWND window, UINT message, WPARAM w, LPARAM l) {
 }
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
     SetProcessDPIAware();cells.fill(RGB(255,255,255));
-    WNDCLASSW klass{};klass.lpfnWndProc=proc;klass.hInstance=instance;klass.lpszClassName=L"DesktopPilotOnboarding";
+    WNDCLASSW klass{};klass.lpfnWndProc=proc;klass.hInstance=instance;klass.lpszClassName=L"ComputerPilotOnboarding";
     klass.hCursor=LoadCursor(nullptr,IDC_ARROW);klass.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_BTNFACE+1);
     RegisterClassW(&klass);
     RECT bounds{0,0,296,404};AdjustWindowRect(&bounds,WS_OVERLAPPEDWINDOW,FALSE);
-    auto window=CreateWindowW(klass.lpszClassName,L"DesktopPilot onboarding - disposable 8x8 canvas",WS_OVERLAPPEDWINDOW,
+    auto window=CreateWindowW(klass.lpszClassName,L"ComputerPilot onboarding - disposable 8x8 canvas",WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,CW_USEDEFAULT,bounds.right-bounds.left,bounds.bottom-bounds.top,nullptr,nullptr,instance,nullptr);
     if(!window) return 1;
     // Honor a hidden launcher first, then explicitly present this test's UI.

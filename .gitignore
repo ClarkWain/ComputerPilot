@@ -24,3 +24,7 @@
 # Local request and desktop debug captures
 /fresh-requests.jsonl
 /tmp_desktop_debug.txt
+
+# Historical one-off drawing/debug output
+/fresh-*
+/flowers-painted.png

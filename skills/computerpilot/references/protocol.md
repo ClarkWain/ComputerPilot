@@ -4,7 +4,7 @@
 
 ## 没有 MCP 宿主时
 
-从 skill 目录的 installation.json 读取实际安装根目录与程序位置。启动 `desktop-pilot.exe serve`，保持进程，按根目录 docs/MCP.md 的 UTF-8 JSON-RPC 示例收发。Agent 自行选择已有通讯能力，不需要为窗口/控件判断复制固定 PowerShell 脚本。
+从 skill 目录的 installation.json 读取实际安装根目录与程序位置。启动 `computer-pilot.exe serve`，保持进程，按根目录 docs/MCP.md 的 UTF-8 JSON-RPC 示例收发。Agent 自行选择已有通讯能力，不需要为窗口/控件判断复制固定 PowerShell 脚本。
 
 可选的 `<root>/examples/onboarding/client.ps1` 只简化通讯：Open-Pilot 建立连接并保存 Initialization，Call-Pilot 调用工具，Send-Pilot 保留工具错误对象，Close-Pilot 关闭服务。任务中复用同一个连接。客户端处理 UTF-8、握手、RPC 编号、stderr 消费及语义调用超时。
 

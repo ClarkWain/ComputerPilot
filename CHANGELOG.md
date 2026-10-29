@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0 — ComputerPilot public launch
+
+- Continue DesktopPilot with cleaned commit history, branches and historical tags retained.
+- Rename executable, MCP configuration, skill and public SDK aliases to ComputerPilot; retain documented v1 compatibility identifiers.
+- Add bilingual introductions and semantic diagrams, an SVG brand, actual Replay video/GIF and installation/migration guides.
+- Publish Windows x64 and macOS arm64 Core archives with SHA-256 checksums. macOS binaries are unsigned and not notarized.
+- Fix reviewed public-media packaging, add security/reporting guidance and public issue/PR entry points.
+- Keep general orchestration on its historical experimental branch; it is not integrated into this native release.
+
+
 ## Unreleased
 
 - Add explicit replay checkpoints after complete stroke groups and fresh-session resume with recipe/document hashes, exact AX document-path/save-state checks, observable-tool and canvas-pixel validation, atomic lifecycle markers and concurrent-run exclusion. Never resume uncertain or partially dispatched input from an obsolete checkpoint.

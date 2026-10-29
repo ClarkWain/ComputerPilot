@@ -1,19 +1,19 @@
-# DesktopPilot 操作录制
+# ComputerPilot 操作录制
 
-录制功能需要显式启用，默认不写操作日志。它记录 DesktopPilot 通过四个公开工具实际执行的调用，不监听用户在其他程序中的手动鼠标或键盘操作。
+录制功能需要显式启用，默认不写操作日志。它记录 ComputerPilot 通过四个公开工具实际执行的调用，不监听用户在其他程序中的手动鼠标或键盘操作。
 
 ## 启用
 
 MCP 宿主将启动命令改为：
 
 ```sh
-./build/core/desktop-pilot serve --record out/my-recording
+./build/core/computer-pilot serve --record out/my-recording
 ```
 
 `--record` 必须是不存在的新目录。正常操作仍使用原来的四个工具，不新增录制工具或工具参数。关闭 MCP 连接的标准输入后，程序完成日志封口。已有配方也可在实际执行时录制：
 
 ```sh
-./build/core/desktop-pilot replay \
+./build/core/computer-pilot replay \
   --file examples/replays/flower-preview/replay.json \
   --mode run --output out/record-source \
   --record out/my-recording
@@ -24,12 +24,12 @@ MCP 宿主将启动命令改为：
 ## 导出可回放配方
 
 ```sh
-./build/core/desktop-pilot recording-export \
+./build/core/computer-pilot recording-export \
   --file out/my-recording/session.jsonl \
   --template examples/replays/flower-preview/replay.json \
   --output out/my-export
-./build/core/desktop-pilot replay --file out/my-export/replay.json
-./build/core/desktop-pilot replay --file out/my-export/replay.json \
+./build/core/computer-pilot replay --file out/my-export/replay.json
+./build/core/computer-pilot replay --file out/my-export/replay.json \
   --mode run --output out/recorded-replay
 ```
 

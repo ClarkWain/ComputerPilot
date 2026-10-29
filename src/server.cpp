@@ -72,7 +72,7 @@ int serve(bool mcp,const std::filesystem::path& recording_directory) {
     };
     const auto startupEnvironment = inspectEnvironment();
     if (!startupEnvironment.value("ready", false))
-        std::cerr << "DesktopPilot DESKTOP ENVIRONMENT ERROR: " << dump_json(startupEnvironment) << '\n' << std::flush;
+        std::cerr << "ComputerPilot DESKTOP ENVIRONMENT ERROR: " << dump_json(startupEnvironment) << '\n' << std::flush;
     std::mutex queue_mutex, output_mutex;
     std::condition_variable arrived;
     std::deque<std::string> queue;
@@ -199,9 +199,9 @@ int serve(bool mcp,const std::filesystem::path& recording_directory) {
                     initialized = true;
                     result = {{"protocolVersion", "2025-06-18"},
                               {"capabilities", {{"tools", {{"listChanged", false}}}}},
-                              {"serverInfo", {{"name", "desktop-pilot"}, {"version", DP_PROJECT_VERSION}}},
+                              {"serverInfo", {{"name", "computer-pilot"}, {"version", DP_PROJECT_VERSION}}},
                               {"instructions",
-                               "DESKTOP PREREQUISITE: DesktopPilot must run in the SAME Windows session and input desktop as the target app, without restricted execution tokens. "
+                               "DESKTOP PREREQUISITE: ComputerPilot must run in the SAME unlocked interactive user session as the target app (Windows input desktop; macOS console session with Accessibility and Screen Recording permission). "
                                "If desktopPreflight.ready is false, stop UI actions and fix the launch context; never keep retrying clicks. "
                                "Use list_windows, get_window_state, then execute_semantic for a matching profile or execute_batch for basic input. Observe the result. Focus and state bookkeeping are automatic. "
                                "Profiles and their action examples are returned for the actual window; do not guess profile support. "

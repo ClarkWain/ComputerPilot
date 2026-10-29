@@ -15,18 +15,22 @@ OUTPUT = ROOT / 'docs/media'
 OUTPUT.mkdir(parents=True, exist_ok=True)
 
 
+TRANSLATIONS = {'多个界面步骤，由本地执行器封装为一个应用语义动作。': 'The local executor wraps multiple UI steps in one semantic action.', '基础操作 · 逐步描述界面交互': 'Basic operations · UI steps', '1 个语义动作 · 直接描述目标': '1 semantic action · State the goal', '封装': 'wrap', '结果示意': 'Illustrated result', '圆形 + 填充 + 描边': 'Circle + fill + outline', '位置与样式一次给出': 'Position and style in one intent', '新文件 · PNG 解码验证': 'New file · PNG decode verified', '流程示意：经典中文版 Paint profile；具体步骤随当前状态变化，图形与文字仍需截图验收。': 'Concept: classic Chinese Paint profile. Steps vary with current state; inspect drawing and text results.', '画一个圆：从选工具到绘制，一次表达': 'Draw a circle: one intent, multiple UI steps', '在画布写字：内容与位置，一次表达': 'Draw text: content and position in one intent', '另存 PNG：从打开对话框到校验，一次表达': 'Save a PNG: from dialog to verified file', '选择椭圆工具': 'Select the ellipse tool', '设置轮廓与填充模式': 'Set outline and fill modes', '打开调色板，填写 RGB': 'Open the palette and enter RGB', '设置描边颜色与线宽': 'Set stroke color and width', '移动到画布起点并拖绘': 'Move to the canvas and drag', '松开鼠标，提交形状': 'Release and commit the shape', '选择文字工具': 'Select the text tool', '设置文字颜色': 'Set text color', '在指定位置拖出文字框': 'Drag a text box at the target', '向文字框输入内容': 'Type the requested content', '结束文字编辑，提交到画布': 'Finish editing and commit', '打开“另存为”对话框': 'Open the Save As dialog', '等待并定位文件名输入框': 'Wait for the filename field', '填写新的绝对文件路径': 'Enter a new absolute file path', '回读并核对文件名': 'Read back and check the filename', '确认保存，等待对话框关闭': 'Save and wait for the dialog to close', '读取文件，验证 PNG 可解码': 'Read and verify the PNG file'}
+
 def render(number, slug, title, steps, action, code, kind):
+    english = slug.endswith('-en')
+    translate = lambda value: TRANSLATIONS.get(value, value) if english else value
     im = Image.new('RGB', (1400, 680), '#f8fafc')
     d = ImageDraw.Draw(im)
 
     def text(x, y, value, size=23, color='#0f172a', mono=False):
         font = ImageFont.truetype(args.mono_font if mono else args.font, size)
-        d.text((x, y), value, font=font, fill=color)
+        d.text((x, y), translate(value), font=font, fill=color)
 
     def box(bounds, fill, outline=None, radius=18):
         d.rounded_rectangle(bounds, radius=radius, fill=fill, outline=outline, width=2)
 
-    text(36, 25, f'{number:02d}   {title}', 38)
+    text(36, 25, f'{number:02d}   {translate(title)}', 38)
     text(38, 87, '多个界面步骤，由本地执行器封装为一个应用语义动作。', 23, '#475569')
     box((36, 145, 570, 611), '#ffffff', '#e2e8f0')
     box((710, 145, 1364, 611), '#ecfdf5', '#a7f3d0')
@@ -58,7 +62,7 @@ def render(number, slug, title, steps, action, code, kind):
         text(903, 502, '圆形 + 填充 + 描边', 25)
         text(903, 542, '位置与样式一次给出', 20, '#64748b')
     elif kind == 'text':
-        text(802, 505, 'Hello DesktopPilot', 36, '#1e1e1e')
+        text(802, 505, 'Hello ComputerPilot', 36, '#1e1e1e')
     else:
         box((791, 496, 859, 563), '#e0f2fe', '#7dd3fc', radius=8)
         text(800, 516, 'PNG', 22, '#0369a1', mono=True)
@@ -66,6 +70,8 @@ def render(number, slug, title, steps, action, code, kind):
         text(889, 543, '新文件 · PNG 解码验证', 20, '#64748b')
     text(38, 636, '流程示意：经典中文版 Paint profile；具体步骤随当前状态变化，图形与文字仍需截图验收。', 19, '#64748b')
     im.save(OUTPUT / f'{slug}.png', optimize=True)
+    if not english:
+        render(number, slug + '-en', title, steps, action, code, kind)
 
     # Keep the illustrated intent machine-readable and tied to an implemented action.
     manifest = json.loads((ROOT / 'profiles/mspaint-classic-zh-CN/profile.json').read_text())
@@ -82,7 +88,7 @@ render(2, 'semantic-text', '在画布写字：内容与位置，一次表达',
        ['选择文字工具', '设置文字颜色', '在指定位置拖出文字框',
         '向文字框输入内容', '结束文字编辑，提交到画布'],
        'drawing.drawText',
-       ['position: [20, 20], size: [360, 70]', 'text: "Hello DesktopPilot"',
+       ['position: [20, 20], size: [360, 70]', 'text: "Hello ComputerPilot"',
         'stroke: {color: [30, 30, 30]}'], 'text')
 render(3, 'semantic-save', '另存 PNG：从打开对话框到校验，一次表达',
        ['打开“另存为”对话框', '等待并定位文件名输入框', '填写新的绝对文件路径',
@@ -90,4 +96,4 @@ render(3, 'semantic-save', '另存 PNG：从打开对话框到校验，一次表
        'document.saveAs',
        ['path: "C:/Pictures/new-drawing.png"', 'format: "png"',
         'overwrite: false'], 'save')
-print('Rendered 3 semantic diagrams into docs/media/')
+print('Rendered 6 bilingual semantic diagrams into docs/media/')

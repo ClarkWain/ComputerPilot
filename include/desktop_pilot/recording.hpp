@@ -4,7 +4,7 @@
 #include <map>
 
 namespace dp {
-// Opt-in recording of DesktopPilot calls, not a global keyboard/mouse hook.
+// Opt-in recording of ComputerPilot calls, not a global keyboard/mouse hook.
 class ActionRecording {
 public:
     explicit ActionRecording(const std::filesystem::path& new_directory);

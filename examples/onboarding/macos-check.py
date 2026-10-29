@@ -5,7 +5,7 @@ import pathlib
 import subprocess
 import sys
 
-exe = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else 'build/core/desktop-pilot').resolve()
+exe = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else 'build/core/computer-pilot').resolve()
 messages = [
     {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-06-18', 'capabilities': {}, 'clientInfo': {'name': 'macos-onboarding', 'version': '1'}}},
     {'jsonrpc': '2.0', 'method': 'notifications/initialized'},

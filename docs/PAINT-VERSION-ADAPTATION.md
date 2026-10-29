@@ -15,7 +15,7 @@
 ## 当前机器的证据
 
 - 正在运行的 mspaint.exe 文件版本：11.2605.81.0；位于 Microsoft.Paint_11.2605.81.0_x64__8wekyb3d8bbwe 包内。
-- DesktopPilot 观察到窗口 DPI=120、宽度=2578。修改前唯一报告原因为 dpi_mismatch；该阶段尚未扫描 profile 所需控件，不能从这个原因推断 UI 兼容。
+- ComputerPilot 观察到窗口 DPI=120、宽度=2578。修改前唯一报告原因为 dpi_mismatch；该阶段尚未扫描 profile 所需控件，不能从这个原因推断 UI 兼容。
 - 当前画布为 1000×1000，屏幕物理 bounds 为相对窗口 (788,283,1000,1000)，缩放显示 100%。此状态支持该窗口下文档像素与物理像素 1:1，但不是其他缩放状态的证明。
 - 画布名为“在画布上使用 画笔 工具”，返回 role=50026（UIA Group），而经典配置要求 Pane。
 - 缩放有 ComboBox、屏外 Edit(value=100%)、Slider(value=100 百分比)；经典配置要求可见 Text(name=100%)。不能为兼容而接受屏外 Edit。
@@ -76,7 +76,7 @@ Microsoft 的 Paint 发布记录显示工具栏、画笔、图层等仍在更新
 - Paint 图层与透明度官方说明：https://blogs.windows.com/windows-insider/2023/09/18/paint-app-update-adding-support-for-layers-and-transparency-begins-rolling-out-to-windows-insiders/
 ## 安装后实机复核
 
-已将通过测试的 profile 同步到 DesktopPilot-release-v0.4.0/app/DesktopPilot/profiles/mspaint-classic-zh-CN/profile.json，源文件与安装文件 SHA-256 一致。安装配置和本机 skill 保留 .before-120dpi.bak 备份；此次仅配置/说明变更，不需要替换运行中的 exe。
+已将通过测试的 profile 同步到 ComputerPilot-release-v0.4.0/app/ComputerPilot/profiles/mspaint-classic-zh-CN/profile.json，源文件与安装文件 SHA-256 一致。安装配置和本机 skill 保留 .before-120dpi.bak 备份；此次仅配置/说明变更，不需要替换运行中的 exe。
 
 复核时原窗口引用失效，窗口列表中原 PID 14056 已不存在；本次操作未发送关闭该文档的指令。随后通过 cmd 启动画图，仅读取新窗口状态，没有绘制或保存。
 

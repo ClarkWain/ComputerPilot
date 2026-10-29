@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="ComputerPilot: basic actions converge into execution">
+<rect width="256" height="256" rx="56" fill="#10253f"/>
+<g fill="none" stroke="#61e8bd" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"><path d="M63 67h36l35 61M63 128h71M63 189h36l35-61"/></g>
+<g fill="#61e8bd"><circle cx="57" cy="67" r="13"/><circle cx="57" cy="128" r="13"/><circle cx="57" cy="189" r="13"/><path d="M138 84a8 8 0 0 1 12-7l63 44a8 8 0 0 1 0 14l-63 44a8 8 0 0 1-12-7z"/></g>
+</svg>

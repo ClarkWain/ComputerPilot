@@ -28,7 +28,7 @@ struct InputLock {
         if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) {
             CloseHandle(mutex);
             mutex = nullptr;
-            throw std::runtime_error("Input busy in another DesktopPilot session");
+            throw std::runtime_error("Input busy in another ComputerPilot session");
         }
     }
     ~InputLock() {

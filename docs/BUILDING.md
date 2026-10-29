@@ -35,16 +35,16 @@ ctest --preset windows-release -LE interactive
 ```powershell
 cmake -S examples/cpp -B build/consumer -G "Visual Studio 17 2022" -A x64
 cmake --build build/consumer --config Release --parallel 4
-.\build\consumer\Release\desktop-pilot-example.exe
+.\build\consumer\Release\computer-pilot-example.exe
 ```
 
-`add_subdirectory` 提供 `DesktopPilot::Core`、`DesktopPilot::Desktop`、`DesktopPilot::Service`。当前不提供稳定 ABI 或安装式 find_package SDK。
+`add_subdirectory` 提供 `ComputerPilot::Core`、`ComputerPilot::Desktop`、`ComputerPilot::Service`。当前不提供稳定 ABI 或安装式 find_package SDK。
 
 ## 分发包
 
 ```powershell
-cmake -DDP_BINARY_DIR=build/core/Release -DDP_PACKAGE_DIR=out/dist/DesktopPilot -P cmake/package.cmake
-.\out\dist\DesktopPilot\bin\desktop-pilot.exe capabilities
+cmake -DDP_BINARY_DIR=build/core/Release -DDP_PACKAGE_DIR=out/dist/ComputerPilot -P cmake/package.cmake
+.\out\dist\ComputerPilot\bin\computer-pilot.exe capabilities
 ```
 
 输出目录必须不存在，防止旧模型或运行库混入新包。分发包含程序、所选构建目录的 DLL、许可证、MCP/操作文档和 skill；不包含模型及本机配置。配置中的安装路径由使用者填写。
@@ -52,11 +52,11 @@ cmake -DDP_BINARY_DIR=build/core/Release -DDP_PACKAGE_DIR=out/dist/DesktopPilot 
 ## GitHub Actions 与 Release
 
 - `build.yml`：push、pull request、手动触发；构建 core、非交互测试、C++ 消费示例、打包上传。
-- `release.yml`：推送 `vX.Y.Z` 标签触发；检查标签与 CMake 版本一致，重新构建测试，再上传 ZIP 和 SHA-256。
+- `release.yml`：推送 `vX.Y.Z` 标签触发；检查标签与 CMake 版本一致，重新构建测试，再上传 Windows ZIP、macOS arm64 tar.gz 和合并的 SHA-256 清单。
 - Release 工作流复用构建流程，只在发布 job 授予 contents:write。
 - CI 的非交互测试不等于真实应用验收；模型后端在安装依赖后本地或专用 Windows runner 验证。
 
-当前版本为 0.5.0。版本字符串由 CMake project version 提供给 CLI capabilities 与 MCP serverInfo。发布前检查 CHANGELOG、第三方声明、干净候选提交和身份扫描。推送 `v0.5.0` 标签后等待 Release 工作流成功，确认 ZIP 与 SHA256SUMS.txt 已附加到该版本；仅推送标签不代表发布完成。
+当前版本为 0.6.0。版本字符串由 CMake project version 提供给 CLI capabilities 与 MCP serverInfo。发布前检查 CHANGELOG、第三方声明、干净候选提交和身份扫描。推送 `v0.6.0` 标签后等待 Release 工作流成功，确认 ZIP 与 SHA256SUMS.txt 已附加到该版本；仅推送标签不代表发布完成。
 ## 截图编码依赖
 
 默认开启 `DP_WITH_WEBP`，首次配置会下载并校验 libwebp 1.6.0 源码，静态链接编码器；发行包包含许可证。离线构建可预先放置 `.deps/downloads/libwebp-1.6.0.tar.gz`，或通过 `-DDP_WITH_WEBP=OFF` 使用 PNG。格式压缩减少传输字节；图像 token 的减少主要依靠限制分辨率、局部裁剪和减少截图次数，不能按文件大小直接推算。

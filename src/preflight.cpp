@@ -59,7 +59,7 @@ Json desktop_preflight(const Json& s) {
         {"reasons", reasons}, {"session", s},
         {"message", ready
             ? "Executor is on the accessible input desktop. This is an environment check, not proof of target-app input acceptance."
-            : "STOP desktop actions: the executor is not in a supported interactive desktop environment. Start DesktopPilot in the SAME Windows user session and input desktop as the target app, using a permitted unrestricted launcher. Do not retry clicks or change coordinates."},
+            : "STOP desktop actions: the executor is not in a supported interactive desktop environment. Start ComputerPilot in the SAME Windows user session and input desktop as the target app, using a permitted unrestricted launcher. Do not retry clicks or change coordinates."},
         {"nextAction", ready
             ? "Select the target window, inspect it, act, then verify the visible result."
             : "Inspect reasons and session. Unlock/reconnect if needed; correct the host launch context (not automatic elevation or desktop switching), restart the service, run system.preflight, and reacquire references. Read-only diagnostics remain available."}};

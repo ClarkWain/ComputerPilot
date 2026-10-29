@@ -85,7 +85,7 @@ Json load_replay_checkpoint(const std::filesystem::path& directory) {
     const auto step=checkpoint["completedSteps"].get<size_t>();validate_replay_stop(recipe,step);
     if(replay_prefix_strokes(recipe,step)!=checkpoint["completedStrokes"].get<size_t>())throw std::runtime_error("Checkpoint stroke count differs from recipe prefix");
     auto document=asset(root,checkpoint,"document","documentSha256");auto relative=decoded_path(checkpoint["document"].get<std::string>());
-    if(relative.has_parent_path()||!relative.filename().string().starts_with("DesktopPilot-replay-")||relative.extension()!=".png")throw std::runtime_error("Checkpoint document is not a replay-owned PNG");
+    if(relative.has_parent_path()||(!relative.filename().string().starts_with("ComputerPilot-replay-")&&!relative.filename().string().starts_with("DesktopPilot-replay-"))||relative.extension()!=".png")throw std::runtime_error("Checkpoint document is not a replay-owned PNG");
     auto canvas=asset(root,checkpoint,"canvas","canvasSha256");load_image(canvas).validate();
     if(!checkpoint.at("observableState").is_object()||checkpoint["observableState"].at("canvasSize")!=Json({recipe["canvas"]["width"],recipe["canvas"]["height"]})||!checkpoint["observableState"].at("controls").is_array())
         throw std::runtime_error("Checkpoint observation differs from recipe canvas");

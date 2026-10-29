@@ -1,4 +1,4 @@
-# DesktopPilot — Round 2 Execution Results
+# ComputerPilot — Round 2 Execution Results
 
 Executor: subagents (Claude) via the four MCP tools; lead monitors + fixes. Complements
 `results.md` (round 1). Image budget note: Claude hosts cap at **20 images per request**, so
@@ -51,7 +51,7 @@ Target was **Windows Terminal** (elevated PowerShell tab). Keystrokes dispatched
 - **Screenshot:** `win32.BitBlt` (the `screen` method) captured the Windows Terminal window as
   **solid black (#0a0a0a)** — BitBlt of the screen DC misses WT's DirectX swap-chain content.
   So the screenshot fallback also yields nothing.
-- **Net:** DesktopPilot can type into Windows Terminal but is **blind to its output** — every
+- **Net:** ComputerPilot can type into Windows Terminal but is **blind to its output** — every
   `execute_batch` returns `status:ok` / `business_result_not_verified`, a false-success trap.
 
 ### Recommended fix direction (deferred — needs deliberate implementation, not a rushed change)
