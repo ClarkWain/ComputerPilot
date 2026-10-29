@@ -20,7 +20,7 @@ try{
     Assert-True ($null -ne $r.error) 'Tools accepted before initialization'
     $r=Send-Request @{jsonrpc='2.0';id=2;method='initialize';params=@{protocolVersion='2025-06-18';capabilities=@{};clientInfo=@{name='native-test';version='1'}}}
     Assert-True ($r.result.protocolVersion -eq '2025-06-18') 'Protocol negotiation failed'
-    Assert-True ($r.result.instructions -match 'SAME Windows session') 'Startup omitted desktop prerequisite'
+    Assert-True ($r.result.instructions -match 'SAME unlocked interactive user session' -and $r.result.instructions -match 'Windows input desktop') 'Startup omitted desktop prerequisite'
     Assert-True ($r.result._meta.'desktopPilot/desktopPreflight'.ready -is [bool]) 'Startup omitted structured preflight'
     $process.StandardInput.WriteLine('{"jsonrpc":"2.0","method":"notifications/initialized"}')
     $r=Send-Request @{jsonrpc='2.0';id=3;method='tools/list'}
