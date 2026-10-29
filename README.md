@@ -1,12 +1,14 @@
 # DesktopPilot
 
+> 本分支保留 DesktopPilot 时期的编排研究和原有命名。公开项目与当前原生发行版见 [ComputerPilot 主分支](https://github.com/ClarkWain/ComputerPilot)。以下历史版本标签提供源码，不代表新的 ComputerPilot 发行包。
+
 DesktopPilot 是供 AI Agent 使用的 Windows 桌面操作程序。当前重构分支使用 Node.js 处理 MCP、profile、语义动作和视觉推理，用 C++20 原生 worker 执行 Win32/UIA、键鼠与截图。Agent 读取窗口、控件和截图，提出操作意图；执行后再观察结果。正式 v0.4.0 发行包仍使用旧 C++ 服务，本分支的 Node 包处于验收阶段。
 
 核心能力是**应用语义操作**：例如 Agent 提交“画一个红色圆”，程序根据适合当前应用的 profile 完成选工具、设置填充、输入 RGB、绘制和提交。没有匹配 profile 时，仍可使用点击、文本输入、按键、拖动和连续鼠标路径。
 
 ## v0.4.0 更新与升级
 
-本版将 MCP 接口统一为下面四个工具，加入应用 profile、连续鼠标路径、批次内样式和控件复用、桌面环境检查、焦点恢复，以及可限制尺寸的截图。下载 [v0.4.0](https://github.com/ClarkWain/DesktopPilot/releases/tag/v0.4.0)，或按下方步骤从源码构建。
+本版将 MCP 接口统一为下面四个工具，加入应用 profile、连续鼠标路径、批次内样式和控件复用、桌面环境检查、焦点恢复，以及可限制尺寸的截图。查看 [v0.4.0 历史源码](https://github.com/ClarkWain/ComputerPilot/tree/v0.4.0)，或按下方步骤从源码构建。
 
 从 v0.3.0 升级时，需要按 [MCP 文档](docs/MCP.md) 修改旧工具调用，更新 skill，并重启 MCP 服务、刷新工具列表；旧工具名不保留兼容入口。经典中文版 Paint 是当前提供的绘图 profile，不能直接套用于任意 Paint 版本或其他软件。
 
