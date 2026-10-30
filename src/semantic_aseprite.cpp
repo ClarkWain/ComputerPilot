@@ -30,12 +30,14 @@ namespace {
 std::filesystem::path resolve_ocr_models(const Json& profile) {
     // Priority: explicit override in the profile-level "ocrModels" field
     // (used as-is so tests / packaging can inject a path without a filesystem
-    // check), then COMPUTERPILOT_OCR_MODELS env var, then the "models/ocr"
+    // check), then COMPUTERPILOT_OCR_MODELS (or the legacy variable when
+    // unset), then the "models/ocr"
     // directory found by walking up from the executable, which is what the
     // CMake install layout produces.
     if (profile.contains("ocrModels") && profile.at("ocrModels").is_string())
         return std::filesystem::path{profile.at("ocrModels").get<std::string>()};
-    const auto configured=environment_path("COMPUTERPILOT_OCR_MODELS");
+    auto configured=environment_path("COMPUTERPILOT_OCR_MODELS");
+    if(configured.empty())configured=environment_path("DESKTOPPILOT_OCR_MODELS");
     if(!configured.empty() && std::filesystem::is_regular_file(configured/"det.onnx") &&
        std::filesystem::is_regular_file(configured/"rec.onnx"))return configured;
     auto dir=executable_path().parent_path();

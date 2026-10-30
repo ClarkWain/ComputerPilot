@@ -3,12 +3,22 @@
 // system.session / window.get / capture.region / vision.ocr / input.click.
 
 #include <desktop_pilot/semantic.hpp>
+#include <desktop_pilot/platform.hpp>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 
 using dp::Json;
 void require(bool ok, const char* message) {
     if (!ok) throw std::runtime_error(message);
+}
+void set_model_environment(const char* name, const std::filesystem::path& value) {
+#ifdef _WIN32
+    require(_wputenv_s(std::filesystem::path(name).c_str(), value.c_str()) == 0,
+            "could not set OCR model environment");
+#else
+    require(setenv(name, value.c_str(), 1) == 0, "could not set OCR model environment");
+#endif
 }
 
 int main(int argc, char** argv) {
@@ -24,7 +34,7 @@ int main(int argc, char** argv) {
         // Scripted mock state.
         int calls = 0, keySends = 0, clicks = 0, captures = 0, ocrs = 0;
         bool desktopBlocked = false, wrongDpi = false, minimized = false;
-        std::string lastKey, phase;
+        std::string lastKey, phase, lastOcrModels;
         Json lastClickAt;
         // Simulate PP-OCRv4's actual behavior on the Aseprite menu bar: it
         // merges all labels into one line, then the adapter substring-matches
@@ -73,6 +83,7 @@ int main(int argc, char** argv) {
                 require(a.at("image") == "C:\\tmp\\fake.png",
                         "vision.ocr must consume the captured strip path");
                 require(a.contains("ocrModels"), "vision.ocr must receive an ocrModels path");
+                lastOcrModels = a.at("ocrModels").get<std::string>();
                 require(a.contains("ocrMaxSide"),
                         "vision.ocr must pass an ocrMaxSide override");
                 return {{"status", "ok"}, {"textLines", ocrLines}};
@@ -309,6 +320,40 @@ int main(int argc, char** argv) {
             }
             require(rejected && clicks == 0 && captures == 0 && ocrs == 0,
                     "saveAsDefault must be rejected without side effects");
+        }
+        // Model directory configuration remains compatible after the product rename.
+        {
+            struct ModelFixture {
+                std::filesystem::path root = std::filesystem::temp_directory_path() /
+                    ("dp-aseprite-models-" + std::to_string(dp::process_id()));
+                ~ModelFixture() { std::error_code error; std::filesystem::remove_all(root, error); }
+            } fixture;
+            const auto legacy = fixture.root / "legacy", current = fixture.root / "current";
+            for (const auto& directory : {legacy, current}) {
+                std::filesystem::create_directories(directory);
+                std::ofstream(directory / "det.onnx").put('x');
+                std::ofstream(directory / "rec.onnx").put('x');
+            }
+            auto envProfile = profile;
+            envProfile.erase("ocrModels");
+            Json request = {{"windowRef", "w1"}, {"action", "aseprite.openMenu"},
+                            {"args", {{"name", "View"}}}};
+            ocrLines = Json::array({{{"text", "View"},
+                {"bounds", {{"x", 10}, {"y", 30}, {"width", 60}, {"height", 20}}},
+                {"recognitionScore", 0.98}}});
+            auto modelsFor = [&](const Json& selectedProfile) {
+                lastOcrModels.clear();
+                auto result = dp::run_semantic(request, selectedProfile, mock, [](int) {});
+                require(result.at("status") == "ok", "model-directory menu request failed");
+                return std::filesystem::u8path(lastOcrModels);
+            };
+            set_model_environment("COMPUTERPILOT_OCR_MODELS", {});
+            set_model_environment("DESKTOPPILOT_OCR_MODELS", legacy);
+            require(modelsFor(envProfile) == legacy, "legacy OCR model variable was ignored");
+            set_model_environment("COMPUTERPILOT_OCR_MODELS", current);
+            require(modelsFor(envProfile) == current, "new OCR model variable must take precedence");
+            require(modelsFor(profile) == std::filesystem::u8path(profile["ocrModels"].get<std::string>()),
+                    "explicit profile model directory must take precedence over environment");
         }
         std::cout << "aseprite-vision tests passed\n";
         return 0;

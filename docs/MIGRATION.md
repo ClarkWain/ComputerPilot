@@ -11,6 +11,9 @@ ComputerPilot is the public continuation of DesktopPilot. The cleaned source com
 | `skills/desktoppilot` | `skills/computerpilot` |
 | `DesktopPilot::Core/Desktop/Service` | `ComputerPilot::Core/Desktop/Service` |
 | `DESKTOPPILOT_PROFILES_DIR` | `COMPUTERPILOT_PROFILES_DIR` |
+| `DESKTOPPILOT_OCR_MODELS` | `COMPUTERPILOT_OCR_MODELS` |
+
+For Aseprite OCR model directories, the profile's explicit `ocrModels` value takes precedence. Otherwise, the new environment variable is used, with the old variable accepted when the new one is unset or empty. A configured new variable does not fall back to the old one if its directory is invalid.
 
 Change your MCP command path and restart the connection. The public MCP tool names remain `list_windows`, `get_window_state`, `execute_semantic` and `execute_batch`.
 
