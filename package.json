@@ -1,0 +1,30 @@
+{
+  "name": "computerpilot",
+  "version": "0.6.1",
+  "private": true,
+  "description": "Native computer use for AI agents on Windows and macOS",
+  "type": "module",
+  "license": "MIT",
+  "author": "eieihihi <eieihihi@outlook.com>",
+  "repository": { "type": "git", "url": "git+https://github.com/ClarkWain/ComputerPilot.git" },
+  "homepage": "https://github.com/ClarkWain/ComputerPilot#readme",
+  "bugs": "https://github.com/ClarkWain/ComputerPilot/issues",
+  "keywords": ["computer-use", "mcp", "desktop-automation", "windows", "macos", "agent-skills"],
+  "engines": { "node": ">=20" },
+  "os": ["win32", "darwin"],
+  "cpu": ["x64", "arm64"],
+  "bin": { "computer-pilot": "bin/computer-pilot.mjs" },
+  "files": ["bin/", "lib/", "skills/computerpilot/", "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "README.zh-CN.md"],
+  "optionalDependencies": {
+    "computerpilot-win32-x64": "0.6.1",
+    "computerpilot-darwin-arm64": "0.6.1"
+  },
+  "publishConfig": { "access": "public" },
+  "scripts": {
+    "test": "node --test tests/npm/*.test.mjs",
+    "prepare:npm": "node scripts/prepare-npm.mjs",
+    "publish:npm": "node scripts/publish-npm.mjs",
+    "smoke:npm": "node scripts/smoke-npm.mjs",
+    "test:skills": "node scripts/check-skills.mjs"
+  }
+}

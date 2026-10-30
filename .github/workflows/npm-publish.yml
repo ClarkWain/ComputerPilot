@@ -1,0 +1,59 @@
+name: npm packages
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published native release tag (for example v0.6.1)
+        type: string
+        required: true
+      dry_run:
+        description: Pack and validate without publishing to npm
+        type: boolean
+        default: true
+permissions:
+  contents: read
+jobs:
+  npm:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.release_tag }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          check-latest: true
+          registry-url: https://registry.npmjs.org
+      - name: Install archive reader
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libarchive-tools
+      - name: Validate version and download native assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          node -e 'const p=require("./package.json"); if(process.env.RELEASE_TAG!=="v"+p.version) throw new Error("Tag and package version differ")'
+          gh release download "$RELEASE_TAG" --dir release-assets \
+            --pattern 'ComputerPilot-windows-x64-core.zip' \
+            --pattern 'ComputerPilot-macos-arm64-core.tar.gz' --pattern SHA256SUMS.txt
+          npm run prepare:npm -- --assets release-assets --out out/npm
+      - name: Publish native packages before the entry package
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [[ "$DRY_RUN" == "true" ]]; then
+            npm run publish:npm -- --packages out/npm
+          else
+            npm run publish:npm -- --packages out/npm --publish --provenance
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ComputerPilot-npm-tarballs
+          path: out/npm/tarballs/*.tgz
+          if-no-files-found: error

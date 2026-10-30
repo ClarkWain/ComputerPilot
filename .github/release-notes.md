@@ -1,8 +1,12 @@
-ComputerPilot v0.6.0 — Semantic actions. Replayable workflows.
+ComputerPilot v0.6.1 — npm and Skills CLI installation.
 
-The first public ComputerPilot release continues DesktopPilot with its cleaned Git history, branches and historical version tags intact.
+This update adds npm distribution and a discoverable agent skill while preserving the native four-tool MCP API.
 
 ## Highlights
+
+- Install the native command with `npm install -g computerpilot` once the matching npm packages are published. Generate client configuration with `computer-pilot mcp-config`.
+- Install the skill with `npx skills add ClarkWain/ComputerPilot --skill computerpilot -a codex -g -y`.
+- Windows model-free Core now statically links the Visual C++ runtime.
 
 - Native Windows/macOS engine with exactly four MCP tools: discover windows, observe, execute semantic actions, and batch basic inputs.
 - Implemented classic Chinese Paint semantics and restricted modern Paint/Aseprite profiles; matched application/version/DPI/layout conditions apply.
@@ -14,7 +18,7 @@ The first public ComputerPilot release continues DesktopPilot with its cleaned G
 
 | Archive | Platform |
 |---|---|
-| `ComputerPilot-windows-x64-core.zip` | Windows x64; Microsoft Visual C++ 2015–2022 x64 Runtime required |
+| `ComputerPilot-windows-x64-core.zip` | Windows x64; Visual C++ runtime linked statically |
 | `ComputerPilot-macos-arm64-core.tar.gz` | macOS 14+, Apple Silicon; **unsigned and not notarized** |
 
 Verify the archives against `SHA256SUMS.txt`, extract to a new directory, and configure your MCP client to run `bin/computer-pilot[.exe] serve`. Keep the adjacent profiles, documentation and license files. Core needs no Node/Python runtime or model weights.

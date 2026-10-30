@@ -26,6 +26,7 @@
       "binaryDir": "${sourceDir}/build/core",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
+        "DP_STATIC_RUNTIME": "ON",
         "DP_WITH_TORCH": "OFF",
         "DP_WITH_OCR": "OFF",
         "DP_TEST_MODEL": "",

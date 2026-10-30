@@ -1,9 +1,31 @@
 ---
 name: computerpilot
-description: 使用 ComputerPilot 操纵 Windows / macOS 桌面软件，读取控件和截图，执行应用语义、填写表单、键鼠操作并验证结果。实际桌面操作时使用；解释软件用法或编辑代码时无需使用。
+description: "Control Windows and macOS desktop apps with ComputerPilot MCP: inspect windows, use matched semantic actions, batch input and verify results. Use for actual desktop interaction, not ordinary code editing or software advice."
 ---
 
 # 使用 ComputerPilot 操纵电脑
+
+## 安装与定位程序
+
+从 0.6.1 起，npm 入口包按平台安装原生 Core（Windows x64、macOS 14+ arm64）：
+
+```sh
+npm install -g computerpilot
+computer-pilot info
+computer-pilot mcp-config
+# Codex 使用 TOML 配置：
+computer-pilot mcp-config --format toml
+```
+
+`info` 返回实际原生程序的 `executable` 和包含 profiles/docs 的 `root`；`mcp-config` 输出可复制到客户端的 MCP 配置，直接启动原生程序，避免 Windows `.cmd` 启动差异。npm 通道需要先完成该版本的公开发布；尚未发布时使用 GitHub Release 或源码构建。
+
+本 skill 支持 Vercel Skills CLI（Node.js 22.20+）：
+
+```sh
+npx skills add ClarkWain/ComputerPilot --skill computerpilot -a codex -g -y
+```
+
+省略 `-a codex` 可选择其他兼容 Agent；省略 `-g` 安装到当前项目。安装 skill 只提供操作指南，不会自动安装程序、修改 MCP 设置或授予系统权限。现成 MCP 工具可直接使用；没有工具时，先确认程序位置和 MCP 连接，用户要求安装/配置时再执行相应设置。
 
 这个 Skill 教 Agent 通过 ComputerPilot 操纵 Windows 或 macOS 电脑完成任务，例如在画图软件中绘画，在浏览器中搜索、填写表单，或操作 Photoshop、Blender 等软件的界面。Agent 负责理解目标、选择操作和验收结果；ComputerPilot 作为中间层执行实际操作。
 
@@ -52,7 +74,7 @@ macOS 本阶段无新增应用 profile，优先按实际控件/截图使用 `exe
 
 ### 没有 MCP 工具
 
-读取本 skill 目录下的 `installation.json`，找到 `root` 与 `executable`，确认路径存在。没有该文件时在用户指定仓库或 Release 中找 `bin/computer-pilot.exe` 或 `build/core/Release/computer-pilot.exe`。不要猜另一个项目的路径。
+如果 PATH 上有 `computer-pilot`，先运行 `computer-pilot info` 获取并验证 `root` 和 `executable`。否则读取本 skill 目录下已有的 `installation.json`。Skills CLI 安装通常不会生成该文件；再根据用户指定的仓库或 Release 查找 `bin/computer-pilot[.exe]` 或 `build/core[/Release]/computer-pilot[.exe]`。不要猜另一个项目的路径。
 
 启动 `computer-pilot.exe serve`，保持同一个服务进程，通过 stdin/stdout 交换下面的 JSON 消息。MCP 宿主或 Agent 选择的客户端负责收发；Agent 负责阅读响应并决定下一步，不需要套用固定的 PowerShell 判断脚本。
 

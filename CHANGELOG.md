@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.1 — Unreleased
+
+- Add npm installation through `computerpilot` and exact-version Windows x64/macOS arm64 native packages, with no install-time scripts or runtime downloads.
+- Add `computer-pilot info`, `mcp-config` and `--version`; forward native commands and MCP streams unchanged.
+- Make the agent skill discoverable through Vercel Skills CLI and able to locate npm-installed Core resources.
+- Add checksum-verified package assembly, isolated global-install/MCP smoke tests and an OIDC npm publishing workflow.
+- Statically link the Visual C++ runtime in Core release builds; source SDK and optional Torch/OCR builds retain the DLL default.
+
 ## 0.6.0 — ComputerPilot public launch
 
 - Continue DesktopPilot with cleaned commit history, branches and historical tags retained.
