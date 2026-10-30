@@ -28,3 +28,10 @@
 # Historical one-off drawing/debug output
 /fresh-*
 /flowers-painted.png
+
+# Local agent configuration, observations and transient diagnostics
+/.kilo/
+/observations/
+/tmp_desktop_*.txt
+/tests/campaign/flower-result.json
+/tests/campaign/resp-tree.json
