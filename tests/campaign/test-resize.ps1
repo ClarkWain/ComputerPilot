@@ -1,5 +1,6 @@
 $ErrorActionPreference = 'Stop'
-Set-Location 'g:\Workspace\ComputerPilot'
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+Set-Location -LiteralPath $repoRoot
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = '.\build\core\Release\computer-pilot.exe'
 $psi.Arguments = 'jsonl'

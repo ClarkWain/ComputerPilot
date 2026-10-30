@@ -1,5 +1,8 @@
 $ErrorActionPreference = 'Stop'
-Set-Location 'g:\Workspace\ComputerPilot'
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+Set-Location -LiteralPath $repoRoot
+$artifactRoot = Join-Path $repoRoot 'out/campaign'
+New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = '.\build\core\Release\computer-pilot.exe'
 $psi.Arguments = 'jsonl'
@@ -17,7 +20,7 @@ $p.StandardInput.WriteLine($req)
 $line2 = $p.StandardOutput.ReadLine()
 $p.StandardInput.Close()
 $p.WaitForExit(3000) | Out-Null
-$line2 | Set-Content 'tests\campaign\resp-tree.json' -Encoding UTF8
+$line2 | Set-Content (Join-Path $artifactRoot 'resp-tree.json') -Encoding UTF8
 $tree = $line2 | ConvertFrom-Json
 $els = $tree.result.elements
 Write-Output ("ref=$ref  elements=" + $els.Count + "  stopReason=" + $tree.result.stopReason + " evidenceComplete=" + $tree.result.evidenceComplete)
