@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "name": "Copy one verified text field",
+  "script": "./workflow.mjs",
+  "input": {
+    "records": [{
+      "id": "message-1",
+      "source": {
+        "target": { "titleContains": "Source App" },
+        "field": { "name": "Message", "role": "Edit" }
+      },
+      "target": {
+        "target": { "titleContains": "Target App" },
+        "field": { "name": "Message", "role": "Edit" },
+        "beforeValue": ""
+      }
+    }]
+  }
+}

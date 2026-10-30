@@ -25,6 +25,8 @@ Open-Pilot 不会因 ready:false 自动终止；Agent 阅读初始化中的 desk
 
 ## 超时与证据
 
-Send-Pilot 客户端超时后可能仍有未完成的 ReadLineAsync，不能假设连接还能正常匹配后续响应。结束/重建服务连接，重新获取窗口状态并确认实际效果，再决定剩余动作；重连不是重放的理由。原生取消和终止也不回滚已发生的输入。
+Call-Pilot 的默认等待预算：普通工具 30 秒；execute_batch 为 30 秒加各动作合法 delay_ms 的总和（最多 256 个动作、每个 10 秒）；execute_semantic 保持 610 秒。可用 `Call-Pilot ... -TimeoutMs 45000` 显式覆盖，Send-Pilot 也接受 TimeoutMs；必须为正整数毫秒，均为有限等待。
+
+Send-Pilot 在超时、响应编号错位、stdout 关闭或响应解析失败后会封锁连接，后续发送立即拒绝。超时可能仍有未完成的 ReadLineAsync；先 Close-Pilot，再 Open-Pilot 重连，重新获取窗口状态并确认实际效果，再决定剩余动作，禁止盲目重发。正常 RPC 错误和工具 isError 不会封锁连接，但仍需依据失败回执核验。重连不是重放的理由，原生取消和终止也不回滚已发生的输入。
 
 测试时在首次运行中保存关键 structuredContent 与截图路径；向 Agent 只输出摘要。不要为补证据重新执行提交或绘图。只返回了截图路径不代表已经查看图片，须使用宿主图片查看能力读取实际结果。

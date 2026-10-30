@@ -6,7 +6,7 @@ import { runClassic } from '../adapters/classic-paint.js';
 import { runModern } from '../adapters/modern-paint.js';
 import { runAseprite, supportedAsepriteActions, inspectAsepriteMenu,
   asepriteSaveGeometrySupported } from '../adapters/aseprite.js';
-import { failed, complete, shallow, equal, type NativeCall, type Action, type Profile } from '../adapters/common.js';
+import { failed, complete, equal, type NativeCall, type Action, type Profile } from '../adapters/common.js';
 
 export type { NativeCall, Action, Profile } from '../adapters/common.js';
 export type DiscoverOptions = { window?: any; tree?: any; signal?: AbortSignal };
@@ -50,12 +50,6 @@ function matches(element: any, selector: any): boolean {
   if (element.offscreen || element.enabled === false) return false;
   return Object.entries(selector).every(([key, value]) => key === 'nameContains'
     ? String(element.name ?? '').includes(String(value)) : equal(element[key], value));
-}
-
-function logicalKey(element: any): string {
-  const b = element.bounds;
-  return [element.role ?? '', element.name ?? '', element.automationId ?? '',
-    b ? `${b.x ?? 0},${b.y ?? 0},${b.width ?? 0},${b.height ?? 0}` : ''].join('\n');
 }
 
 export class ProfileEngine {
@@ -124,11 +118,11 @@ export class ProfileEngine {
               tree = { status: 'error', code: 'ui_inspection_failed',
               message: String(error?.message ?? error), stopReason: 'provider_error', evidenceComplete: false }; }
           }
-          if (!complete(tree) && !shallow(tree)) reasons.push('ui_inspection_incomplete');
+          if (!complete(tree)) reasons.push('ui_inspection_incomplete');
           else for (const name of match.requiredSelectors) {
             const selector = profile.selectors[name];
             const found = tree.elements.filter((e: any) => matches(e, selector));
-            if ((shallow(tree) ? new Set(found.map(logicalKey)).size === 0 : found.length !== 1))
+            if (found.length !== 1)
               reasons.push(`control_not_unique:${name}`);
           }
           if (!reasons.length && typeof match.requiredMenuLabel === 'string') {

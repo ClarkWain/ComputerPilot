@@ -41,7 +41,7 @@ Json desktop_preflight(const Json& s) {
             : "STOP desktop actions: the executor is not in a supported interactive desktop environment. Start DesktopPilot in the SAME Windows user session and input desktop as the target app, using a permitted unrestricted launcher. Do not retry clicks or change coordinates."},
         {"nextAction", ready
             ? "Select the target window, inspect it, act, then verify the visible result."
-            : "Inspect reasons and session. Unlock/reconnect if needed; correct the host launch context (not automatic elevation or desktop switching), restart the service, run system.preflight, and reacquire references. Read-only diagnostics remain available."}};
+            : "Inspect reasons and session. Unlock/reconnect if needed; correct the host launch context (not automatic elevation or desktop switching), reconnect MCP and check its startup desktopPreflight, then call list_windows and inspect the target again. Read-only diagnostics may remain available."}};
 }
 bool requires_interactive_desktop(const std::string& op) {
     return op.starts_with("input.") || op == "semantic.perform" || op == "semantic.execute" || op == "app.launch" ||

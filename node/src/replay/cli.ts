@@ -11,11 +11,12 @@ import { runReplay } from './runner.js';
 import { assetBytes, exportArchive, openArchive } from './archive.js';
 import { draftFromRecording } from './draft.js';
 import { inspectRun } from './recovery.js';
+import { checkRecipe } from './check.js';
 
 const [command, input, output] = process.argv.slice(2);
-if (!['validate','play','resume','inspect','export','draft'].includes(command) || !input ||
+if (!['validate','check','play','resume','inspect','export','draft'].includes(command) || !input ||
   (['play','resume','inspect','export','draft'].includes(command) && !output)) {
-  process.stderr.write('Usage: replay validate <recipe-dir|file.dpreplay> | replay export <recipe-dir> <new-file.dpreplay> | replay play <recipe-dir|file.dpreplay> <new-run-dir> | replay inspect|resume <recipe-dir|file.dpreplay> <run-dir> | replay draft <recording.jsonl> <new-recipe-dir>\n');
+  process.stderr.write('Usage: replay validate|check <recipe-dir|file.dpreplay> | replay export <recipe-dir> <new-file.dpreplay> | replay play <recipe-dir|file.dpreplay> <new-run-dir> | replay inspect|resume <recipe-dir|file.dpreplay> <run-dir> | replay draft <recording.jsonl> <new-recipe-dir>\n');
   process.exitCode = 2;
 } else {
   let native: NativeClient | undefined;
@@ -34,6 +35,11 @@ if (!['validate','play','resume','inspect','export','draft'].includes(command) |
     const recipe = await loadRecipe(recipeDirectory);
     await assetBytes(recipeDirectory,recipe);
     if (command === 'validate') process.stdout.write(`Valid recipe: ${recipe.name} (${recipe.steps.length} steps)\n`);
+    else if (command === 'check') {
+      const result = await checkRecipe(recipe);
+      process.stdout.write(JSON.stringify(result, null, 2)+'\n');
+      if (!result.compatible) process.exitCode = 1;
+    }
     else if (command === 'inspect') process.stdout.write(JSON.stringify(await inspectRun(resolve(output!),recipe))+'\n');
     else {
       const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');

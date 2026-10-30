@@ -16,15 +16,21 @@ export type AskArgs = { question: string; choices: string[] };
 export type CommandKind = 'readInput' | 'observe' | 'step' | 'waitFor' | 'ask' | 'checkpoint' | 'suno';
 export type CommandRequest = { kind: CommandKind; id: string; scope: string; args: unknown };
 export type CommandResult = unknown;
+/** Only a host that has not invoked an input operation may report this error. */
+export class CommandNotDispatchedError extends Error {}
 export type OrchestrationDefinition = { schemaVersion: 1; name: string; script: string;
-  scriptSha256: string; input: unknown; inputSha256: string; createdAt: string };
+  scriptSha256: string; input: unknown; inputSha256: string; createdAt: string;
+  desktopResultContract?: 'desktop-v1' };
 export type OrchestrationEvent = { seq: number; time: string; kind: string; [key: string]: unknown };
 export type OrchestrationStatus = 'running' | 'paused' | 'cancelled' | 'completed' |
-  'waiting_decision' | 'needs_reconciliation' | 'failed';
+  'waiting_decision' | 'retry_available' | 'needs_reconciliation' | 'failed';
 export type OrchestrationReport = { schemaVersion: 1; name: string; status: OrchestrationStatus;
-  commandCount: number; committedCount: number; pending?: { key: string; kind: CommandKind; args: unknown };
+  commandCount: number; committedCount: number; pending?: { key: string; kind: CommandKind; args: unknown;
+    dispatch?: 'not_dispatched' };
   message?: string; result?: unknown; runDirectory: string };
 export type OrchestrationHost = {
+  /** Built-in desktop result shapes; omitted for hosts with their own result contract. */
+  desktopResultContract?: 'desktop-v1';
   execute(request: CommandRequest): Promise<CommandResult>;
   releaseDesktop?(): Promise<void>;
 };

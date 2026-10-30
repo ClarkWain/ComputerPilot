@@ -4,7 +4,7 @@ $ErrorActionPreference='Stop'
 $client=$null
 try {
     $client=Open-Pilot $Executable
-    $preflight=$client.Initialization._meta.'desktopPilot/desktopPreflight'
+    $preflight=Get-PilotPreflight $client
     if(-not $preflight.ready){$preflight|ConvertTo-Json -Depth 20;exit 3}
     $windows=Call-Pilot $client 'list_windows' @{}
     @{status='ready';windowCount=@($windows.windows).Count;

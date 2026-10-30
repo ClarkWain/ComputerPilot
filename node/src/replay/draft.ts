@@ -48,22 +48,30 @@ export async function draftFromRecording(journalPath:string,outputDirectory:stri
     if (targetTitle && targetTitle!==title) throw new Error('Recording uses changing target titles; review binding manually');
     targetTitle=title;
     const args=obj(intent.args),actions=args.actions;
-    if (!Array.isArray(actions) || actions.length!==1 || result.completed!==1)
-      throw new Error('Drafting requires one confirmed semantic action per recorded call');
-    const action=obj(actions[0]),actionName=text(action.action),profile=text(result.profile)||text(args.profile);
-    if (!actionName || !profile) throw new Error('Recorded semantic action or profile is missing');
-    const actionArgs={...obj(action.args)};
+    if (!Array.isArray(actions) || actions.length<1 || actions.length>256 || result.completed!==actions.length ||
+      (result.dispatch!==undefined && result.dispatch!=='returned'))
+      throw new Error('Drafting requires 1..256 fully confirmed semantic actions per recorded call');
+    const profile=text(result.profile);
+    if (!profile || (args.profile!==undefined && args.profile!==profile))
+      throw new Error('Recorded semantic profile was not confirmed by the receipt');
     const expect:ReplayStep['expect']={profileAvailable:profile};
-    if (actionName==='document.saveAs' && typeof actionArgs.path==='string') {
-      const filename=basename(actionArgs.path.replaceAll('\\','/'));
-      if (!filename || filename==='.' || filename==='..') throw new Error('Saved filename is invalid');
-      if (outputs.has(filename.toLowerCase())) throw new Error(`Recorded outputs collide after export: ${filename}`);
-      outputs.add(filename.toLowerCase());
-      actionArgs.path=`{{runDir}}/${filename}`;
-      expect.file={path:filename,minBytes:1};
-    }
+    const translated=actions.map(raw=>{
+      const action=obj(raw),actionName=text(action.action),actionArgs={...obj(action.args)};
+      if (!actionName) throw new Error('Recorded semantic action is missing');
+      if (actionName==='document.saveAs') {
+        if (expect.file) throw new Error('Multiple saves in one semantic batch need separate file postconditions; review manually');
+        if (typeof actionArgs.path!=='string') throw new Error('Saved filename is missing');
+        const filename=basename(actionArgs.path.replaceAll('\\','/'));
+        if (!filename || filename==='.' || filename==='..') throw new Error('Saved filename is invalid');
+        if (outputs.has(filename.toLowerCase())) throw new Error(`Recorded outputs collide after export: ${filename}`);
+        outputs.add(filename.toLowerCase());
+        actionArgs.path=`{{runDir}}/${filename}`;
+        expect.file={path:filename,minBytes:1};
+      }
+      return {action:actionName,args:actionArgs};
+    });
     steps.push({id:`step-${String(steps.length+1).padStart(3,'0')}`,profile,
-      action:{action:actionName,args:actionArgs},before:{profileAvailable:profile},expect});
+      ...(translated.length===1?{action:translated[0]}:{actions:translated}),before:{profileAvailable:profile},expect});
   }
   if (!steps.length) throw new Error('Recording contains no confirmed semantic steps');
   const recipe:ReplayRecipe={schemaVersion:1,name:'Draft from Agent recording',

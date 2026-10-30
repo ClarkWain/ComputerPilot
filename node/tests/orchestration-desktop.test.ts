@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDesktopOrchestrationHost } from '../src/orchestration/desktop-host.js';
-import { resumeOrchestration, startOrchestration } from '../src/orchestration/runner.js';
+import { orchestrationStatus, resumeOrchestration, startOrchestration } from '../src/orchestration/runner.js';
+import { CommandNotDispatchedError } from '../src/orchestration/types.js';
 import type { ReplayApi } from '../src/replay/runner.js';
 
 test('desktop host binds each target and verifies a semantic action before reporting success',async()=>{
@@ -107,5 +108,111 @@ test('one authored run can read one application and fill another without redispa
     assert.equal(leases,0);
     const second=await resumeOrchestration(run,host);
     assert.equal(second.status,'completed');assert.equal(dispatches,1);
+  } finally {await rm(root,{recursive:true,force:true});}
+});
+
+for (const failure of ['precondition','target','profile','control']) {
+  test(`explicit resume retries a ${failure} rejection without redispatching its committed prefix`,async()=>{
+    const root=await mkdtemp(join(tmpdir(),'dp-before-dispatch-'));
+    const script=join(root,'workflow.mjs'),run=join(root,'run');
+    const semantic=failure==='profile';
+    await writeFile(script,`export default async ctx => ctx.withDesktop('form',async desktop => {
+      await desktop.step('prefix',{mode:'batch',target:{titleContains:'Prefix'},
+        actions:[{type:'press_keys',chord:'CTRL+S'}],before:{titleContains:'Prefix'},expect:{titleContains:'Prefix'}});
+      await desktop.step('fill',{
+        ${semantic ? "profile:'test',actions:[{action:'write',args:{text:'Hello'}}]" :
+          "mode:'batch',actions:[{type:'fill_text',control:{name:'Message',role:'Edit'},text:'Hello'}]"},
+        target:{titleContains:'Form'},
+        before:${failure==='precondition' ? "{control:{name:'Message',value:''}}" : "{titleContains:'Form'}"},
+        expect:{control:{name:'Message',value:'Hello'}}});
+    });`);
+    let corrected=false,value='',prefixDispatches=0,fillDispatches=0;
+    const api:ReplayApi={async call(tool,args){
+      if(tool==='list_windows')return {status:'ok',windows:[
+        {window_id:'prefix',title:'Prefix'},{window_id:'form',title:'Form'},
+        ...(!corrected&&failure==='target'?[{window_id:'duplicate',title:'Form'}]:[])]};
+      if(tool==='get_window_state')return {status:'ok',title:args.window_id==='prefix'?'Prefix':'Form',
+        semantic:{profiles:!corrected&&failure==='profile'?[]:[{id:'test'}]},controls:[
+          {control_id:'live',name:'Message',role:'Edit',value:!corrected&&failure==='precondition'?'existing':value},
+          ...(!corrected&&failure==='control'?[{control_id:'duplicate',name:'Message',role:'Edit',value}]:[])]};
+      if(tool==='execute_batch'||tool==='execute_semantic') {
+        if(args.window_id==='prefix')prefixDispatches++;else {fillDispatches++;value='Hello';}
+        return {status:'ok',completed:1};
+      }
+      throw new Error(`Unexpected ${tool}`);
+    }};
+    const host=createDesktopOrchestrationHost(api,run,run,async()=>async()=>{});
+    try {
+      const first=await startOrchestration('pre-dispatch recovery',script,{},run,host);
+      assert.equal(first.status,'retry_available',first.message??'');
+      assert.equal(first.pending?.dispatch,'not_dispatched');
+      assert.equal(first.committedCount,1);
+      assert.equal(prefixDispatches,1);assert.equal(fillDispatches,0);
+      assert.equal((await orchestrationStatus(run)).status,'retry_available');
+      corrected=true;
+      const resumed=await resumeOrchestration(run,host);
+      assert.equal(resumed.status,'completed',resumed.message??'');
+      assert.equal(prefixDispatches,1);assert.equal(fillDispatches,1);
+      assert.equal((await resumeOrchestration(run,host)).status,'completed');
+      assert.equal(fillDispatches,1);
+    } finally {await rm(root,{recursive:true,force:true});}
+  });
+}
+
+for (const failure of ['response_lost','partial','postcondition','typed_error']) {
+  test(`a ${failure} failure after dispatch still requires reconciliation`,async()=>{
+    const root=await mkdtemp(join(tmpdir(),'dp-after-dispatch-'));
+    const script=join(root,'workflow.mjs'),run=join(root,'run');
+    await writeFile(script,`export default async ctx => ctx.withDesktop('form',desktop => desktop.step('fill',{
+      mode:'batch',target:{titleContains:'Form'},actions:[{type:'type_text',text:'Hello'}],
+      before:{titleContains:'Form'},expect:{control:{name:'Message',value:'Hello'}},timeoutMs:1}));`);
+    let dispatches=0;
+    const api:ReplayApi={async call(tool){
+      if(tool==='list_windows')return {status:'ok',windows:[{window_id:'form',title:'Form'}]};
+      if(tool==='get_window_state')return {status:'ok',title:'Form',controls:[{name:'Message',value:''}]};
+      if(tool==='execute_batch') {
+        dispatches++;
+        if(failure==='response_lost')throw new Error('Response lost after dispatch');
+        if(failure==='typed_error')throw new CommandNotDispatchedError('Untrusted backend marker');
+        return {status:'ok',completed:failure==='partial'?0:1};
+      }
+      throw new Error(`Unexpected ${tool}`);
+    }};
+    const host=createDesktopOrchestrationHost(api,run,run,async()=>async()=>{});
+    try {
+      const first=await startOrchestration('post-dispatch protection',script,{},run,host);
+      assert.equal(first.status,'needs_reconciliation',first.message??'');
+      assert.equal(first.pending?.dispatch,undefined);assert.equal(dispatches,1);
+      await assert.rejects(resumeOrchestration(run,host),/reconciliation/i);
+      assert.equal(dispatches,1);
+    } finally {await rm(root,{recursive:true,force:true});}
+  });
+}
+
+test('missing or incomplete not-dispatched evidence retains legacy crash protection',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'dp-dispatch-evidence-'));
+  const script=join(root,'workflow.mjs'),run=join(root,'run');
+  await writeFile(script,`export default async ctx => ctx.withDesktop('form',desktop => desktop.step('fill',{
+    mode:'batch',target:{titleContains:'Form'},actions:[{type:'type_text',text:'Hello'}],
+    before:{titleContains:'Form'},expect:{titleContains:'Form'}}));`);
+  const host=createDesktopOrchestrationHost({async call(){return {status:'ok',windows:[]};}},
+    run,run,async()=>async()=>{});
+  try {
+    assert.equal((await startOrchestration('dispatch evidence',script,{},run,host)).status,'retry_available');
+    const path=join(run,'execution.jsonl');
+    const events=(await readFile(path,'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+    const safeHash=events.at(-1).requestHash;
+    events.at(-1).requestHash='0'.repeat(64);
+    await writeFile(path,events.map(event=>JSON.stringify(event)+'\n').join(''));
+    await assert.rejects(orchestrationStatus(run),/dispatch evidence/i);
+    events.at(-1).requestHash=safeHash;
+    delete events.at(-1).dispatch;delete events.at(-1).requestHash;
+    await writeFile(path,events.map(event=>JSON.stringify(event)+'\n').join(''));
+    assert.equal((await orchestrationStatus(run)).status,'needs_reconciliation');
+    await assert.rejects(resumeOrchestration(run,host),/reconciliation/i);
+    events.pop(); // Crash after the intent, before persisting the safe error.
+    await writeFile(path,events.map(event=>JSON.stringify(event)+'\n').join(''));
+    assert.equal((await orchestrationStatus(run)).status,'needs_reconciliation');
+    await assert.rejects(resumeOrchestration(run,host),/reconciliation/i);
   } finally {await rm(root,{recursive:true,force:true});}
 });

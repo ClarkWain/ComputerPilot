@@ -5,10 +5,9 @@ $client=$null;$fixture=$null
 $timer=[Diagnostics.Stopwatch]::StartNew()
 try {
     $client=Open-Pilot $Executable
-    $preflight=$client.Initialization._meta.'desktopPilot/desktopPreflight'
+    $preflight=Get-PilotPreflight $client
     if(-not $preflight.ready){throw ($preflight|ConvertTo-Json -Depth 20 -Compress)}
-    $fixtureExe=Join-Path (Split-Path (Resolve-Path $Executable)) 'desktop-pilot-onboarding.exe'
-    if(-not (Test-Path -LiteralPath $fixtureExe)){throw 'Build/package desktop-pilot-onboarding.exe first.'}
+    $fixtureExe=Find-PilotFixture $Executable
     # The helper starts hidden; its only UI is the deliberate disposable test canvas.
     $fixture=Start-Process -FilePath $fixtureExe -WindowStyle Hidden -PassThru
     [void]$fixture.WaitForInputIdle(5000)
@@ -26,7 +25,8 @@ try {
     function Point($Name) {
         if(-not $nodes.ContainsKey($Name)){throw "Missing observed control: $Name"}
         $b=$nodes[$Name].bounds
-        return @{x=[int][Math]::Floor($b.x+$b.width/2);y=[int][Math]::Floor($b.y+$b.height/2)}
+        if($b -isnot [array] -or $b.Count -ne 4 -or $b[2] -le 0 -or $b[3] -le 0){throw "Invalid observed bounds: $Name"}
+        return @{x=[int][Math]::Floor($b[0]+$b[2]/2);y=[int][Math]::Floor($b[1]+$b[3]/2)}
     }
     # Validate every target before any drawing; all coordinates come from this run's UIA tree.
     foreach($key in @('R','B','Y')){$null=Point $palette[$key]}

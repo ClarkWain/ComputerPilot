@@ -4,9 +4,9 @@ $ErrorActionPreference='Stop'
 $client=$null;$fixture=$null;$distractor=$null;$timer=[Diagnostics.Stopwatch]::StartNew()
 try {
     $client=Open-Pilot $Executable
-    $connection=$client.Initialization._meta.'desktopPilot/desktopPreflight'
+    $connection=Get-PilotPreflight $client
     if(-not $connection.ready){throw ($connection|ConvertTo-Json -Depth 20 -Compress)}
-    $exe=Join-Path (Split-Path (Resolve-Path $Executable)) 'desktop-pilot-onboarding.exe'
+    $exe=Find-PilotFixture $Executable
     $fixture=Start-Process -FilePath $exe -WindowStyle Hidden -PassThru
     [void]$fixture.WaitForInputIdle(5000)
     $selected=Call-Pilot $client 'list_windows' @{}

@@ -16,6 +16,31 @@ test('classic Paint validates the whole batch before desktop access', async () =
   assert.equal(calls, 0);
 });
 
+test('classic Paint refuses incomplete or ambiguous controls before input', async () => {
+  const profile = await new ProfileEngine(async () => ({})).load('mspaint-classic-zh-CN');
+  const zoom = { elementRef: 'zoom', ...profile.selectors.zoom };
+  for (const tree of [
+    { elements: [zoom], stopReason: 'depthLimit', truncated: true, evidenceComplete: false },
+    { elements: [zoom, { ...zoom, elementRef: 'duplicate' }], stopReason: 'depthLimit' },
+    { elements: [zoom], stopReason: 'depthLimit', truncated: false, evidenceComplete: true },
+    { elements: [zoom, { ...zoom, elementRef: 'duplicate' }], stopReason: 'complete' }
+  ]) {
+    const calls: string[] = [];
+    const result = await runClassic(async op => {
+      calls.push(op);
+      if (op === 'system.session') return { inputDesktopAccessible: true, lockState: 'unlocked' };
+      if (op === 'window.get') return { enabled: true, foreground: true, dpi: 144, bounds: {} };
+      if (op === 'ui.tree') return { status: 'ok', ...tree };
+      throw new Error(op);
+    }, 'w1', profile, [{ action: 'drawing.drawCircle', args: { center: [50, 50], radius: 10 } }],
+    { status: 'ok', ...tree });
+    assert.match(result.message, /ui_inspection_incomplete|control_not_unique/);
+    assert.equal(result.dispatch, 'not_started');
+    assert.equal(result.completed, 0);
+    assert.equal(calls.some(op => op.startsWith('input.') || op === 'ui.click' || op === 'ui.invoke'), false);
+  }
+});
+
 test('classic Paint refreshes enabled ribbon controls and clicks the fill popup in its own window', async () => {
   const profile = await new ProfileEngine(async () => ({})).load('mspaint-classic-zh-CN');
   const element = (name: string, role: string, elementRef: string, enabled = true) =>
@@ -62,4 +87,42 @@ test('modern Paint validates width and path before desktop access', async () => 
   assert.equal(result.dispatch, 'not_started');
   assert.equal(result.completed, 0);
   assert.equal(calls, 0);
+});
+
+test('modern Paint reselects the brush after filling while reusing consecutive brush actions', async () => {
+  const profile = await new ProfileEngine(async () => ({})).load('mspaint-modern-zh-CN');
+  const selectors = new Map(Object.entries(profile.selectors).map(([key, value]) => [JSON.stringify(value), key]));
+  const window = { enabled: true, minimized: false,
+    bounds: { x: 0, y: 0, width: 2000, height: 1200 } };
+  let active = 'pencil', brushSelects = 0, width = 7;
+  const toolsAtMoves: string[] = [], toolsAtFills: string[] = [];
+  const element = (ref: string) => ({ elementRef: ref, enabled: true,
+    bounds: ref === 'canvas' ? { x: 100, y: 200, width: 1000, height: 700 }
+      : { x: 20, y: 20, width: 30, height: 30 },
+    name: ref === 'canvas' ? `在画布上使用${active === 'brush' ? '画笔' : active === 'fill' ? '填充' : '铅笔'}` : '',
+    value: ref === 'zoom' ? '100 百分比' : ref === 'width' ? `${width} 像素` : ref === 'opacity' ? '100%' : '' });
+  const line = { action: 'drawing.drawPolyline', args: { points: [[10, 10], [30, 30]],
+    stroke: { color: [0, 0, 0], width: 7 } } };
+  const fill = { action: 'drawing.fillAt', args: { position: [20, 20], color: [255, 0, 0] } };
+  const result = await runModern(async (op, args) => {
+    if (op === 'system.session') return { inputDesktopAccessible: true, lockState: 'unlocked' };
+    if (op === 'window.get') return window;
+    if (op === 'ui.find') return { status: 'ok', evidenceComplete: true,
+      elements: [element(selectors.get(JSON.stringify(args.selector)) ?? 'hex')] };
+    if (op === 'ui.get') return element(String(args.elementRef));
+    if (op === 'input.click') {
+      if (args.x === 35) { active = 'brush'; brushSelects++; }
+      else toolsAtFills.push(active);
+    }
+    if (op === 'ui.click' && args.elementRef === 'fill') active = 'fill';
+    if (op === 'input.move') toolsAtMoves.push(active);
+    if (op === 'ui.set_range_value') width = Number(args.value) + 1;
+    if (op === 'ui.fill') return { status: 'ok', verification: 'passed' };
+    return { status: 'ok' };
+  }, 'w1', profile, [line, line, fill, line, fill, { action: 'drawing.selectBrush', args: { brush: 'brush' } }]);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.completed, 6);
+  assert.equal(brushSelects, 3);
+  assert.deepEqual(toolsAtMoves, ['brush', 'brush', 'brush']);
+  assert.deepEqual(toolsAtFills, ['fill', 'fill']);
 });

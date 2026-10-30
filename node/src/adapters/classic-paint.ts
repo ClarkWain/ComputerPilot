@@ -1,6 +1,6 @@
 import { readFile, stat } from 'node:fs/promises';
 import { win32 } from 'node:path';
-import { checked, complete, shallow, equal, int, point, rgb, keysOnly, selectorMatches, sleep,
+import { checked, complete, equal, int, point, rgb, keysOnly, selectorMatches, sleep,
   centerClick, type Action, type NativeCall, type Profile } from './common.js';
 
 type Shape = { item: Action; tool: string; vertices?: number[][]; box: [number, number, number, number];
@@ -139,9 +139,9 @@ export async function runClassic(nativeCall: NativeCall, windowRef: string, prof
       tree = await call('ui.tree', { windowRef: host, depth: 16, limit: 400, format: 'locator', queryTimeoutMs: 10000 });
       treeCache.set(host, tree);
     }
-    if (!complete(tree) && !shallow(tree)) throw new Error('ui_inspection_incomplete');
+    if (!complete(tree)) throw new Error('ui_inspection_incomplete');
     const found = tree.elements.filter((element: any) => selectorMatches(element, selector));
-    if (shallow(tree) ? !found.length : found.length !== 1)
+    if (found.length !== 1)
       throw new Error(`control_not_unique: ${JSON.stringify(selector)} (matches=${found.length}, tree=${tree.elements.length}, stop=${tree.stopReason})`);
     return found[0].elementRef;
   };

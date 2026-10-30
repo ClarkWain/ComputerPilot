@@ -38,6 +38,27 @@ test('image observation returns path and maps screenshot pixels to physical inpu
   assert.equal(reused.code,'state_required');
 });
 
+test('a modal appearing during activation exposes a usable blocking window identity',async()=>{
+  const {api,native,calls}=fixture();
+  let activated=false;
+  const popup={...window,windowRef:'popup',title:'Save dialog',pid:8};
+  const original=native.call.bind(native);
+  native.call=async(operation:string,args:JsonObject={})=>{
+    if(operation==='window.activate'){activated=true;return {status:'ok'};}
+    if(operation==='window.get')return args.windowRef==='popup'?popup:
+      activated?{...window,enabled:false,blockingWindow:popup}:{...window,foreground:false};
+    if(operation==='ui.tree')return {status:'ok',elements:[],evidenceComplete:true};
+    return original(operation,args);
+  };
+  await api.call('list_windows',{});
+  const blocked=await api.call('get_window_state',{window_id:'w-1'});
+  assert.equal(blocked.code,'window_blocked');
+  assert.deepEqual(blocked.blocking_window,{window_id:'popup',title:'Save dialog',pid:8});
+  const dialog=await api.call('get_window_state',{window_id:'popup',activate:false});
+  assert.equal(dialog.status,'ok');assert.equal(dialog.title,'Save dialog');
+  assert.equal(calls.some(call=>call.operation.startsWith('input.')),false);
+});
+
 test('partial platform outcome stops a batch before later input',async()=>{
   const {api,calls,native}=fixture();
   await api.call('list_windows',{});await api.call('get_window_state',{window_id:'w-1',mode:'image'});

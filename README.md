@@ -10,7 +10,7 @@ DesktopPilot 是供 AI Agent 使用的 Windows 桌面操作程序。当前重构
 
 本版将 MCP 接口统一为下面四个工具，加入应用 profile、连续鼠标路径、批次内样式和控件复用、桌面环境检查、焦点恢复，以及可限制尺寸的截图。查看 [v0.4.0 历史源码](https://github.com/ClarkWain/ComputerPilot/tree/v0.4.0)，或按下方步骤从源码构建。
 
-从 v0.3.0 升级时，需要按 [MCP 文档](docs/MCP.md) 修改旧工具调用，更新 skill，并重启 MCP 服务、刷新工具列表；旧工具名不保留兼容入口。经典中文版 Paint 是当前提供的绘图 profile，不能直接套用于任意 Paint 版本或其他软件。
+从 v0.3.0 升级时，需要按 [MCP 文档](docs/MCP.md) 修改旧工具调用，更新 skill，并重启 MCP 服务、刷新工具列表；旧工具名不保留兼容入口。正式 v0.4.0 旧 C++ 包提供经典中文版 Paint profile；当前 Node 分支另有新版中文 Paint 和 Aseprite 的有限语义适配，不能直接套用于其他版本、语言或 DPI。
 
 动作执行完成不代表画面正确。逐图形像素抽样方案已撤销；Agent 在批次后查看截图验收。小尺寸原生多边形仍有已知问题，实验中的扫描线绘法尚未集成为自动语义后端。完整变更见 [CHANGELOG](CHANGELOG.md)，验证范围见 [验证记录](docs/validation/OPTIMIZATION-VALIDATION.md)。
 
@@ -86,8 +86,8 @@ pwsh -NoProfile -File skills/desktoppilot/scripts/install.ps1 -Update
 - 单击 control_id 时优先调用控件的 Invoke 能力；不支持才使用前台指针。仍需前台输入的路径自动恢复焦点，但不承诺任意后台绘图。模态弹窗和持续遮挡返回具体阻塞，不盲目重放。
 - 内部 `app.launch` 对新建且唯一匹配 profile 的窗口应用尺寸建议；已有窗口观察时不自动调整。需要调整已有窗口时，在观察后单独调用 `execute_batch` 的 `prepare_window`，按 96-DPI 逻辑客户区给出期望和最低尺寸，执行后重新观察。经典 Paint profile 已改为按客户区宽高判断兼容性；新版 Paint 和 Aseprite 保留既有范围。
 
-- 内置 profile 目前只有**经典简体中文 Paint**，支持图形、文字、刷子选择和 PNG 另存为；不是所有 Paint 版本通用。见 [profile 条件和参数](docs/SEMANTIC-PROFILES.md)。
-- Photoshop、Blender、Aseprite 等应用没有内置专用语义适配；可依据实际截图和控件使用基础操作。
+- 当前 Node 分支内置**经典简体中文 Paint**（96/120/144 DPI，120 DPI 尚缺实机验收）、**新版中文 Paint**（实测 11.2605.81.0、仅 120 DPI，选笔、RGB、笔宽、连续路径和点填充）及 **Aseprite 英文界面实验 profile**（有限热键、工具和 OCR 菜单操作，英文界面动作待实机验收；默认另存为还受固定尺寸和 96 DPI 限制）。具体动作只使用当前窗口返回的示例，条件见 [profile 条件和参数](docs/SEMANTIC-PROFILES.md)。
+- Photoshop、Blender 等应用没有内置专用语义适配；可依据实际截图和控件使用基础操作。未列出的软件、语言、布局和 DPI 不承诺语义兼容。
 - 语义匹配不等于成品验收。绘图派发成功不保证像素级尺寸或美术质量，提交按钮点成功也不代表网站任务完成。
 - Node 视觉模块已接入 PP-OCRv4 和转换后的 OmniParser ONNX；当前只完成固定图片的等价性验证，模型及许可证需在发布前检查。旧 v0.4.0 核心发行包不附带模型权重。
 - 对外 MCP 只有上述四个工具，旧工具名不保留别名。底层原生 JSONL 协议供开发调试使用，日常 Agent 无需学习。

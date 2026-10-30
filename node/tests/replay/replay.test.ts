@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { checkFile, loadRecipe, type ReplayRecipe } from '../../src/replay/recipe.js';
@@ -12,7 +12,7 @@ import { acquireDesktopLock } from '../../src/replay/lock.js';
 import { ReplayRecorder } from '../../src/replay/record.js';
 import { draftFromRecording } from '../../src/replay/draft.js';
 import sharp from 'sharp';
-import { inspectRun } from '../../src/replay/recovery.js';
+import { inspectRun, recipeHash } from '../../src/replay/recovery.js';
 import type { JsonObject } from '../../src/native/client.js';
 
 const recipe:ReplayRecipe={schemaVersion:1,name:'test',target:{titleContains:'Paint'},steps:[
@@ -146,13 +146,31 @@ test('resume continues only a committed prefix after rechecking a document basel
   try {
     await assert.rejects(runReplay(api,resumable,run),/precondition failed/);
     assert.equal(dispatched,1);
-    assert.deepEqual(await inspectRun(run,resumable),{state:'resumable',committed:1,nextStep:'second',verification:'partial'});
+    assert.deepEqual(await inspectRun(run,resumable),{state:'resumable',canResume:true,committed:1,nextStep:'second',verification:'partial'});
     await assert.rejects(inspectRun(run,{...resumable,name:'different'}),/another recipe/);
     ready=true;
     const result=await runReplay(api,resumable,run,run,true);
     assert.equal(result.verification,'partial');
     assert.equal(dispatched,2);
     assert.equal((await inspectRun(run,resumable)).state,'complete');
+  } finally { await rm(base,{recursive:true,force:true}); }
+});
+
+test('replay refuses an unknown dispatch even if status and count claim success',async()=>{
+  const base=await mkdtemp(join(tmpdir(),'dp-replay-unknown-dispatch-'));
+  const run=join(base,'run');let dispatches=0;
+  const api={async call(tool:string):Promise<JsonObject>{
+    if(tool==='list_windows')return {status:'ok',windows:[{window_id:'w1',title:'Paint'}]};
+    if(tool==='get_window_state')return {status:'ok',semantic:{profiles:[{id:'paint'}]}};
+    if(tool==='execute_semantic'){dispatches++;return {status:'ok',completed:1,dispatch:'unknown'};}
+    throw new Error(tool);
+  }};
+  try {
+    await assert.rejects(runReplay(api,recipe,run),/dispatch outcome was not confirmed/);
+    assert.equal(dispatches,1);
+    const inspection=await inspectRun(run,recipe);
+    assert.equal(inspection.state,'needs_reconciliation');assert.equal(inspection.canResume,false);
+    assert.equal(inspection.committed,0);
   } finally { await rm(base,{recursive:true,force:true}); }
 });
 
@@ -199,7 +217,7 @@ test('concurrent resume rechecks the checkpoint after acquiring the desktop lock
   try {
     await assert.rejects(runReplay(firstRunApi,resumable,run,run,false,acquireTestLock),/precondition failed/);
     assert.equal(initialDispatches,1);
-    assert.deepEqual(await inspectRun(run,resumable),{state:'resumable',committed:1,nextStep:'second',verification:'partial'});
+    assert.deepEqual(await inspectRun(run,resumable),{state:'resumable',canResume:true,committed:1,nextStep:'second',verification:'partial'});
 
     const firstResume=runReplay(resumeApi,resumable,run,run,true,acquireTestLock);
     await actionStarted;
@@ -213,6 +231,53 @@ test('concurrent resume rechecks the checkpoint after acquiring the desktop lock
     assert.equal(resumeDispatches,1);
     assert.equal((await inspectRun(run,resumable)).state,'complete');
   } finally { releaseAction();await rm(base,{recursive:true,force:true}); }
+});
+
+test('inspect distinguishes a committed prefix from permission to resume',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'dp-replay-inspect-baseline-'));
+  const journal=join(dir,'execution.jsonl');
+  const prefix=[{kind:'intent',step:'first'},
+    {kind:'receipt',step:'first',result:{status:'ok',completed:1,dispatch:'returned'}},
+    {kind:'postcondition',step:'first',passed:true},
+    {kind:'commit',step:'first',verification:'profile_compatibility_only'}];
+  const writeJournal=async(candidate:ReplayRecipe,events:unknown[])=>writeFile(journal,
+    [{kind:'start',recipeHash:recipeHash(candidate)},...events].map(x=>JSON.stringify(x)).join('\n')+'\n');
+  let apiCalls=0;
+  const api={async call():Promise<JsonObject>{apiCalls++;throw new Error('Resume must stop before observation');}};
+  try {
+    await writeJournal(recipe,prefix);
+    const inspection=await inspectRun(dir,recipe);
+    assert.equal(inspection.state,'resumable');assert.equal(inspection.canResume,false);
+    assert.equal(inspection.committed,1);assert.equal(inspection.nextStep,'second');
+    assert.match(inspection.reason!,/document-specific before condition/);
+    const original=await readFile(journal,'utf8');
+    await assert.rejects(runReplay(api,recipe,dir,dir,true),/document-specific before condition/);
+    assert.equal(apiCalls,0);assert.equal(await readFile(journal,'utf8'),original);
+    for (const before of [{profileAvailable:'paint'},{titleContains:'Paint'},{fileAbsent:'new.png'},
+      {file:{path:'image.png',minBytes:1}},{capture:{anchor:{nameContains:'Canvas',role:'Pane',
+        inset:{x:0,y:0,unit:'pixels' as const}},width:1,height:1,savePath:'stage.png'}}]) {
+      const candidate={...recipe,steps:[recipe.steps[0],{...recipe.steps[1],before}]};
+      await writeJournal(candidate,prefix);
+      assert.equal((await inspectRun(dir,candidate)).canResume,false);
+    }
+    for (const before of [{control:{name:'Document',value:''}},
+      {file:{path:'image.png',sha256:'a'.repeat(64)}},
+      {capture:{anchor:{nameContains:'Canvas',role:'Pane',inset:{x:0,y:0,unit:'pixels' as const}},
+        width:1,height:1,reference:{asset:'assets/baseline.png',channelTolerance:0,maxChangedPercent:0}}}]) {
+      const candidate={...recipe,steps:[recipe.steps[0],{...recipe.steps[1],before}]};
+      await writeJournal(candidate,prefix);
+      assert.equal((await inspectRun(dir,candidate)).canResume,true);
+    }
+    const strong={...recipe,steps:[recipe.steps[0],{...recipe.steps[1],before:{control:{name:'Document',value:'baseline'}}}]};
+    await writeJournal(strong,[...prefix,{kind:'intent',step:'second'},
+      {kind:'receipt',step:'second',result:{status:'ok',completed:1,dispatch:'unknown'}}]);
+    assert.equal((await inspectRun(dir,strong)).state,'needs_reconciliation');
+    assert.equal((await inspectRun(dir,strong)).canResume,false);
+    await writeJournal(strong,[...prefix,{kind:'intent',step:'second'}]);
+    assert.equal((await inspectRun(dir,strong)).canResume,false);
+    await writeFile(journal,'{"kind":"receipt"', {flag:'a'});
+    assert.match((await inspectRun(dir,strong)).reason!,/incomplete event/);
+  } finally { await rm(dir,{recursive:true,force:true}); }
 });
 
 test('profile-only playback is reported as partial verification',async()=>{
@@ -312,6 +377,84 @@ test('opt-in Agent semantic recording produces a reviewable portable draft',asyn
     assert.equal(loaded.steps[0].action!.args.path,'{{runDir}}/drawing.png');
     assert.equal(loaded.steps[0].expect.file?.path,'drawing.png');
     await exportArchive(output,join(base,'draft.dpreplay'));
+  } finally { await rm(base,{recursive:true,force:true}); }
+});
+
+test('draft preserves confirmed semantic batches as one portable partial step',async()=>{
+  const base=await mkdtemp(join(tmpdir(),'dp-replay-draft-batch-'));
+  try {
+    const recorder=await ReplayRecorder.create(join(base,'journal'));
+    recorder.observe('list_windows',{}, {status:'ok',windows:[{window_id:'w1',title:'Paint'}]});
+    const actions=[recipe.steps[0].action!,{action:'document.saveAs',args:{path:'C:\\original\\image.png'}}];
+    const id=await recorder.intent('execute_semantic',{window_id:'w1',profile:'paint',actions});
+    await recorder.receipt(id,{status:'ok',completed:2,profile:'paint',dispatch:'returned'});
+    const output=join(base,'draft');
+    assert.equal(await draftFromRecording(recorder.path,output),1);
+    const loaded=await loadRecipe(output);
+    assert.equal(loaded.steps.length,1);assert.equal(loaded.steps[0].action,undefined);
+    assert.deepEqual(loaded.steps[0].actions,[actions[0],{...actions[1],args:{path:'{{runDir}}/image.png'}}]);
+    assert.deepEqual(loaded.steps[0].expect.file,{path:'image.png',minBytes:1});
+    let dispatches=0;
+    const run=join(base,'run');
+    const api={async call(tool:string,args:JsonObject):Promise<JsonObject>{
+      if(tool==='list_windows')return {status:'ok',windows:[{window_id:'w1',title:'Paint'}]};
+      if(tool==='get_window_state')return {status:'ok',semantic:{profiles:[{id:'paint'}]}};
+      if(tool==='execute_semantic'){
+        dispatches++;assert.equal((args.actions as unknown[]).length,2);
+        await writeFile(join(run,'image.png'),'unverified file');return {status:'ok',completed:2};
+      }
+      throw new Error(tool);
+    }};
+    assert.equal((await runReplay(api,loaded,run)).verification,'partial');
+    assert.equal(dispatches,1);
+    assert.deepEqual(await inspectRun(run,loaded),{state:'complete',canResume:false,committed:1,verification:'partial'});
+
+    const maximum=await ReplayRecorder.create(join(base,'max-journal'));
+    maximum.observe('list_windows',{}, {status:'ok',windows:[{window_id:'w1',title:'Paint'}]});
+    const maximumId=await maximum.intent('execute_semantic',{window_id:'w1',profile:'paint',
+      actions:Array.from({length:256},()=>actions[0])});
+    await maximum.receipt(maximumId,{status:'ok',completed:256,profile:'paint'});
+    const maxOutput=join(base,'max-draft');
+    assert.equal(await draftFromRecording(maximum.path,maxOutput),1);
+    assert.equal((await loadRecipe(maxOutput)).steps[0].actions?.length,256);
+  } finally { await rm(base,{recursive:true,force:true}); }
+});
+
+test('draft rejects uncertain, basic and multi-save calls before creating output',async()=>{
+  const base=await mkdtemp(join(tmpdir(),'dp-replay-draft-refuse-'));
+  const action=recipe.steps[0].action!;
+  const save=(path:string)=>({action:'document.saveAs',args:{path}});
+  const cases=[
+    {actions:[action,action],result:{status:'ok',completed:1,profile:'paint'},message:/fully confirmed/},
+    {actions:[action],result:{status:'ok',completed:1,profile:'paint',dispatch:'unknown'},message:/fully confirmed/},
+    {actions:[action],result:{status:'partial',completed:1,profile:'paint'},message:/may have changed/},
+    {actions:[action],result:{status:'ok',completed:1},message:/profile was not confirmed/},
+    {actions:[action],result:{status:'ok',completed:1,profile:'other'},message:/profile was not confirmed/},
+    {actions:[],result:{status:'ok',completed:0,profile:'paint'},message:/fully confirmed/},
+    {actions:Array.from({length:257},()=>action),result:{status:'ok',completed:257,profile:'paint'},message:/fully confirmed/},
+    {tool:'execute_batch',actions:[action],result:{status:'ok',completed:1,profile:'paint'},message:/portable semantic step/},
+    {actions:[save('C:\\one\\a.png'),save('C:\\two\\b.png')],result:{status:'ok',completed:2,profile:'paint'},message:/Multiple saves/},
+    {actions:[action],result:undefined,message:/outcome is unknown/}
+  ];
+  try {
+    for (const [index,scenario] of cases.entries()) {
+      const recorder=await ReplayRecorder.create(join(base,`journal-${index}`));
+      recorder.observe('list_windows',{}, {status:'ok',windows:[{window_id:'w1',title:'Paint'}]});
+      const id=await recorder.intent(scenario.tool??'execute_semantic',{window_id:'w1',profile:'paint',actions:scenario.actions});
+      if(scenario.result)await recorder.receipt(id,scenario.result);
+      const output=join(base,`draft-${index}`);
+      await assert.rejects(draftFromRecording(recorder.path,output),scenario.message);
+      await assert.rejects(stat(output),{code:'ENOENT'});
+    }
+    const recorder=await ReplayRecorder.create(join(base,'collision'));
+    recorder.observe('list_windows',{}, {status:'ok',windows:[{window_id:'w1',title:'Paint'}]});
+    for(const path of ['C:\\one\\image.png','C:\\two\\IMAGE.png']) {
+      const id=await recorder.intent('execute_semantic',{window_id:'w1',profile:'paint',actions:[action,save(path)]});
+      await recorder.receipt(id,{status:'ok',completed:2,profile:'paint'});
+    }
+    const output=join(base,'collision-draft');
+    await assert.rejects(draftFromRecording(recorder.path,output),/outputs collide/);
+    await assert.rejects(stat(output),{code:'ENOENT'});
   } finally { await rm(base,{recursive:true,force:true}); }
 });
 

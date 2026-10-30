@@ -4,13 +4,13 @@
 
 ## list_windows
 
-List all open windows. No parameters. Read the returned titles and pids to identify the intended window_id; does not activate or resize.
+List all open windows. No parameters. Read structuredContent.windows titles and pids to identify the intended window_id; does not activate or resize. JSON is in structuredContent, not content.
 
 无参数；传空对象 {}。
 
 ## get_window_state
 
-Get compact controls and semantic profiles by default. change_mode:delta returns only changes since this connection's last complete observation of the same window and view; the first call or a reset returns full state. Unchanged screenshots are omitted, including inline images; small changes may return a positioned capture.kind:patch with a fullPath. Input coordinates still use the full image frame. detail:full restores complete control fields and longer text. mode:image skips UI Automation and profile discovery; mode:both includes controls/profiles and a screenshot. Screenshots return a local capture.path by default; image_delivery:inline also sends an MCP image. max_edge sets the screenshot's longest pixel edge (default 1600 for full windows; regions retain source size); it never enlarges the capture. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Optional region uses window-relative physical pixels for a lossless detail view. Restores focus unless activate:false.
+Get compact controls and semantic profiles by default. JSON is in structuredContent; content contains only inline images. change_mode:delta returns only changes since this connection's last complete observation of the same window and view; the first call or a reset returns full state. Unchanged screenshots are omitted, including inline images; small changes may return a positioned capture.kind:patch with a fullPath. Input coordinates still use the full image frame. detail:full restores complete control fields and longer text, not a deeper or unlimited control tree. mode:image skips UI Automation and profile discovery; mode:both includes controls/profiles and a screenshot. Screenshots return a local capture.path by default; remote hosts need image_delivery:inline. Basic point coordinates follow the returned coordinateSpace; screenshot coordinates map automatically. Restores focus unless activate:false.
 
 | 字段 | 必填 | 类型/取值 |
 |---|---|---|
@@ -25,7 +25,7 @@ Get compact controls and semantic profiles by default. change_mode:delta returns
 
 ## execute_semantic
 
-PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Execution manages controls, colors, focus and waits. Stops on failure; inspect the result before retrying.
+PREFERRED when get_window_state returns a matching profile. Execute 1..256 app actions using its examples. Omit profile to auto-select exactly one compatible profile; explicit ids are revalidated. Execution manages controls, colors, focus and waits. Read structuredContent.completed, failedIndex and dispatch before continuing; content carries images only. Stops on failure. Unknown or possibly_partial dispatch must be inspected, never blindly replayed.
 
 | 字段 | 必填 | 类型/取值 |
 |---|---|---|
@@ -35,7 +35,7 @@ PREFERRED when get_window_state returns a matching profile. Execute 1..256 app a
 
 ## execute_batch
 
-Execute basic actions on the last observed window. A standalone prepare_window action explicitly adjusts its client area in dip96 and returns the measured result; inspect again before input. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Stops on failure without replay.
+Execute basic actions on the last observed window. A standalone prepare_window action explicitly adjusts its client area in dip96 and returns the measured result; inspect again before input. control_id clicks prefer direct UIA invocation; pointer input restores focus. Points use the last state's coordinateSpace (image_pixels when a screenshot was returned, otherwise window pixels). Mapping is internal. Read structuredContent.completed, failedIndex and dispatch; JSON is not repeated in content. Stops on failure. Unknown or possibly_partial dispatch must be inspected, never blindly replayed.
 
 | 字段 | 必填 | 类型/取值 |
 |---|---|---|

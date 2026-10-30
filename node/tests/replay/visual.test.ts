@@ -43,6 +43,7 @@ test('visual settling requires repeated identical observations',async()=>{
     return {status:'ok',capture:{imageRef:polls===1?'first':'stable'}};
   }};
   const result=await waitForStableImage(api,'w1',{mode:'image',quietMs:50,pollMs:25,timeoutMs:500});
-  assert.ok(result.polls>=4);
+  // A delayed timer can satisfy quietMs on the first repeated stable image.
+  assert.ok(result.polls>=3);
   assert.ok(result.elapsedMs>=50);
 });

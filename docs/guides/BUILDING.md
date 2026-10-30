@@ -36,7 +36,7 @@ cmake --build build/consumer --config Release --parallel 4
 .\build\consumer\Release\desktop-pilot-example.exe
 ```
 
-`add_subdirectory` 提供 `DesktopPilot::Core`、`DesktopPilot::Desktop`、`DesktopPilot::Service`。当前不提供稳定 ABI 或安装式 find_package SDK。
+此示例显式开启 `DP_BUILD_LEGACY=ON`，验证旧 C++ Service；开启后 `add_subdirectory` 提供 `DesktopPilot::Core`、`DesktopPilot::Desktop`、`DesktopPilot::Service`。当前不提供稳定 ABI 或安装式 find_package SDK。
 
 ## 分发包
 

@@ -68,6 +68,48 @@ test('semantic execution rejects stale input evidence before dispatch', async ()
   assert.deepEqual(calls, ['system.session', 'window.get', 'ui.tree', 'system.session', 'window.get']);
 });
 
+test('Paint discovery requires complete, unique control evidence', async () => {
+  const engine = new ProfileEngine(async () => { throw new Error('not called'); });
+  const duplicate = { ...classicTree.elements[0], elementRef: 'duplicate-zoom',
+    bounds: { x: 40, y: 0, width: 10, height: 10 } };
+  for (const elements of [classicTree.elements, [...classicTree.elements, duplicate]]) {
+    for (const flags of [
+      { truncated: true, evidenceComplete: false },
+      { truncated: false, evidenceComplete: true }
+    ]) {
+      const result = await engine.discover('w1', { window: classicWindow,
+        tree: { ...classicTree, elements, stopReason: 'depthLimit', ...flags } });
+      assert.deepEqual(result.profiles, []);
+      assert.ok(result.unavailable[0].reasons.includes('ui_inspection_incomplete'));
+    }
+  }
+  const ambiguous = await engine.discover('w1', { window: classicWindow,
+    tree: { ...classicTree, elements: [...classicTree.elements, duplicate], stopReason: 'complete' } });
+  assert.deepEqual(ambiguous.profiles, []);
+  assert.ok(ambiguous.unavailable[0].reasons.includes('control_not_unique:zoom'));
+  const unique = await engine.discover('w1', { window: classicWindow, tree: classicTree });
+  assert.equal(unique.profiles[0].id, 'mspaint-classic-zh-CN');
+});
+
+test('Paint semantic execution stops before input on depth-truncated evidence', async () => {
+  const calls: string[] = [];
+  const engine = new ProfileEngine(async op => {
+    calls.push(op);
+    if (op === 'system.session') return { inputDesktopAccessible: true, lockState: 'unlocked' };
+    if (op === 'window.get') return classicWindow;
+    if (op === 'ui.tree') return { ...classicTree, stopReason: 'depthLimit',
+      truncated: true, evidenceComplete: false };
+    throw new Error(op);
+  });
+  const result = await engine.execute('w1', 'mspaint-classic-zh-CN', [
+    { action: 'drawing.drawCircle', args: { center: [50, 50], radius: 10 } }
+  ]);
+  assert.equal(result.code, 'profile_inspection_incomplete');
+  assert.equal(result.dispatch, 'not_started');
+  assert.equal(result.completed, 0);
+  assert.deepEqual(calls, ['system.session', 'window.get', 'ui.tree']);
+});
+
 test('Aseprite OCR actions are advertised after Node OCR routing is available', async () => {
   const aseprite = { ...classicWindow, executable: 'aseprite.exe', className: 'Aseprite.Window', dpi: 96,
     bounds: { ...classicWindow.bounds, width: 2578, height: 1398 }, display: { dpi: 96 }, client: undefined };

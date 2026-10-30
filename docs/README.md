@@ -27,4 +27,4 @@
 
 ## 历史研究
 
-- [Computer Use 协议比较](research/COMPUTER-USE-PROTOCOL-COMPARISON.md)、[Skill 内容审查](research/SKILL-CONTENT-AUDIT.md)
+- [Computer Use 协议比较](research/COMPUTER-USE-PROTOCOL-COMPARISON.md)

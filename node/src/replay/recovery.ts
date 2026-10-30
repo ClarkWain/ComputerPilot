@@ -3,9 +3,10 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { JsonObject } from '../native/client.js';
 import type { ReplayRecipe } from './recipe.js';
+import { operationFailed } from '../agent/api.js';
 
 export type RunInspection = { state:'resumable'|'complete'|'needs_reconciliation';
-  committed:number; nextStep?:string; verification:'verified'|'partial'; reason?:string };
+  canResume:boolean; committed:number; nextStep?:string; verification:'verified'|'partial'; reason?:string };
 const obj=(value:unknown):JsonObject=>value && typeof value==='object' && !Array.isArray(value)
   ?value as JsonObject:{};
 export const recipeHash=(recipe:ReplayRecipe):string=>createHash('sha256')
@@ -29,40 +30,43 @@ export async function inspectRun(directory:string,recipe:ReplayRecipe):Promise<R
     if (kind==='precondition' || kind==='resume' || kind==='stopped') continue;
     if (kind==='intent') {
       if (pending || entry.step!==recipe.steps[committed]?.id)
-        return {state:'needs_reconciliation',committed,verification:'partial',reason:'Unexpected intent order'};
+        return {state:'needs_reconciliation',canResume:false,committed,verification:'partial',reason:'Unexpected intent order'};
       pending=String(entry.step);receipt=false;postcondition=false;
     } else if (kind==='receipt') {
       const result=obj(entry.result);
       const step=recipe.steps[committed];
       const expectedCount=step.actions?.length??1;
-      if (!pending || entry.step!==pending || receipt || result.status!=='ok' || result.completed!==expectedCount)
-        return {state:'needs_reconciliation',committed,verification:'partial',reason:'Input outcome is uncertain'};
+      if (!pending || entry.step!==pending || receipt || result.status!=='ok' || operationFailed(result) ||
+        result.completed!==expectedCount || (result.dispatch!==undefined && result.dispatch!=='returned'))
+        return {state:'needs_reconciliation',canResume:false,committed,verification:'partial',reason:'Input outcome is uncertain'};
       receipt=true;
     } else if (kind==='settled') {
       if (!pending || entry.step!==pending || !receipt || postcondition)
-        return {state:'needs_reconciliation',committed,verification:'partial',reason:'Visual settling order is invalid'};
+        return {state:'needs_reconciliation',canResume:false,committed,verification:'partial',reason:'Visual settling order is invalid'};
     } else if (kind==='postcondition') {
       if (!pending || entry.step!==pending || !receipt || entry.passed!==true)
-        return {state:'needs_reconciliation',committed,verification:'partial',reason:'Postcondition was not confirmed'};
+        return {state:'needs_reconciliation',canResume:false,committed,verification:'partial',reason:'Postcondition was not confirmed'};
       postcondition=true;
     } else if (kind==='commit') {
       if (!pending || entry.step!==pending || !receipt || !postcondition)
-        return {state:'needs_reconciliation',committed,verification:'partial',reason:'Incomplete step checkpoint'};
+        return {state:'needs_reconciliation',canResume:false,committed,verification:'partial',reason:'Incomplete step checkpoint'};
       if (entry.verification!=='file_hash_checked') fullyVerified=false;
       committed++;pending='';receipt=false;postcondition=false;
     } else if (kind==='finished') {
       if (pending || committed!==recipe.steps.length)
-        return {state:'needs_reconciliation',committed,verification:'partial',reason:'Finished marker is inconsistent'};
+        return {state:'needs_reconciliation',canResume:false,committed,verification:'partial',reason:'Finished marker is inconsistent'};
       finished=true;
-    } else return {state:'needs_reconciliation',committed,verification:'partial',reason:`Unknown journal event: ${kind}`};
+    } else return {state:'needs_reconciliation',canResume:false,committed,verification:'partial',reason:`Unknown journal event: ${kind}`};
   }
   const verification=fullyVerified?'verified':'partial';
-  if (incompleteTail) return {state:'needs_reconciliation',committed,verification:'partial',
+  if (incompleteTail) return {state:'needs_reconciliation',canResume:false,committed,verification:'partial',
     reason:'Journal ends with an incomplete event'};
-  if (pending) return {state:'needs_reconciliation',committed,verification:'partial',
+  if (pending) return {state:'needs_reconciliation',canResume:false,committed,verification:'partial',
     reason:`Action ${pending} may already have changed the desktop`};
-  if (finished || committed===recipe.steps.length) return {state:'complete',committed,verification};
-  return {state:'resumable',committed,nextStep:recipe.steps[committed].id,verification};
+  if (finished || committed===recipe.steps.length) return {state:'complete',canResume:false,committed,verification};
+  const nextStep=recipe.steps[committed].id,canResume=hasStrongResumeBaseline(recipe,committed);
+  return {state:'resumable',canResume,committed,nextStep,verification,
+    ...(!canResume?{reason:`Step ${nextStep}: a document-specific before condition is required`}:{})};
 }
 
 export function hasStrongResumeBaseline(recipe:ReplayRecipe,index:number):boolean {

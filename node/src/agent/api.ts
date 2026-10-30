@@ -136,18 +136,19 @@ export class AgentApi {
   private async prepareWindow(id: string, options: NativeCallOptions): Promise<JsonObject> {
     let window = await this.dispatch('window.get', { windowRef: id }, options);
     if (failed(window)) return window;
-    if (window.enabled === false) {
+    const blocked = (): JsonObject => {
       const popup = obj(window.blockingWindow);
       if (str(popup.windowRef)) this.targets.set(str(popup.windowRef), popup);
       return { ...resultError('window_blocked', 'Target is disabled; inspect its modal dialog.', 'Inspect blocking window'),
         ...(str(popup.windowRef) ? { blocking_window: { window_id: popup.windowRef, title: popup.title, pid: popup.pid } } : {}) };
-    }
+    };
+    if (window.enabled === false) return blocked();
     if (!window.foreground || window.minimized) {
       const activation = await this.dispatch('window.activate', { windowRef: id }, options);
       if (failed(activation)) return activation;
       window = await this.dispatch('window.get', { windowRef: id }, options);
       if (failed(window)) return window;
-      if (window.enabled === false) return resultError('window_blocked', 'Target became blocked during activation.', 'get_window_state with activate:false');
+      if (window.enabled === false) return blocked();
       if (!window.foreground) return resultError('window_activation_failed', 'Automatic activation did not restore target focus.', 'Inspect desktop and blocking window');
     }
     return window;
