@@ -5,7 +5,7 @@
   "description": "Native computer use for AI agents on Windows and macOS",
   "type": "module",
   "license": "MIT",
-  "author": "eieihihi <eieihihi@outlook.com>",
+  "author": "eieihihi <clarkwain@outlook.com>",
   "repository": { "type": "git", "url": "git+https://github.com/ClarkWain/ComputerPilot.git" },
   "homepage": "https://github.com/ClarkWain/ComputerPilot#readme",
   "bugs": "https://github.com/ClarkWain/ComputerPilot/issues",
