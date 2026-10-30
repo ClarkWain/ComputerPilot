@@ -158,6 +158,27 @@ profile 根据实际应用、版本、DPI、布局和控件证据匹配。没有
 
 ## 快速开始
 
+从 0.6.1 起，支持 npm 一键安装原生命令（Node.js 20+）：
+
+```sh
+npm install -g computerpilot
+computer-pilot mcp-config
+# Codex 使用 TOML 配置：
+computer-pilot mcp-config --format toml
+```
+
+将输出的 MCP 配置复制到客户端并重新连接。支持 Windows x64、macOS 14+ arm64；`computer-pilot info` 可查看实际安装路径。npm 版本尚未发布时，使用下方原生发行包。[npm 安装与发布说明](docs/NPM.md)
+
+使用 [Vercel Skills CLI](https://github.com/vercel-labs/skills) 安装 skill（Node.js 22.20+），例如全局安装到 Codex：
+
+```sh
+npx skills add ClarkWain/ComputerPilot --skill computerpilot -a codex -g -y
+```
+
+省略 `-a codex` 可选择其他 Agent，省略 `-g` 安装到当前项目。skill 提供操作指南，MCP 配置与系统权限仍需单独设置。
+
+Windows PowerShell 中，若脚本 shim 执行或参数透传受限，可使用 `npm.cmd` / `npx.cmd`。
+
 ComputerPilot v0.6.0 是改名后的首次公开发行，保留原 DesktopPilot 的提交、分支和版本标签。下载 [Windows x64 / macOS arm64 Core 包](https://github.com/ClarkWain/ComputerPilot/releases)，按[安装指南](docs/INSTALLATION.md)配置；macOS 包暂未签名或公证。
 
 源码构建需要 CMake 3.29+；Windows 使用 Visual Studio 2022，macOS 14+ 使用 Xcode Command Line Tools。**原生核心运行无需 Node 或 Python**，可选视觉模型单独配置。
@@ -185,7 +206,7 @@ ctest --preset core-only -LE interactive
 }
 ```
 
-Windows 发行包使用 `bin/computer-pilot.exe`；Visual Studio 源码构建使用 `build/core/Release/computer-pilot.exe`。Windows 发行包需要 Microsoft Visual C++ 2015–2022 x64 Runtime。macOS 需为实际执行程序或宿主授予辅助功能与屏幕录制权限。
+Windows 发行包使用 `bin/computer-pilot.exe`；Visual Studio 源码构建使用 `build/core/Release/computer-pilot.exe`。0.6.1+ Core 发行包静态链接 Visual C++ 运行库；旧 0.6.0 包仍需 Microsoft Visual C++ 2015–2022 x64 Runtime。macOS 需为实际执行程序或宿主授予辅助功能与屏幕录制权限。
 
 执行器需与目标应用处于同一可交互用户会话。启动预检返回 `ready:false` 时，先按诊断修正环境；锁屏时暂停界面输入。
 

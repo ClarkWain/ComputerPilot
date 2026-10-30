@@ -89,6 +89,27 @@ Recorded examples include a 64.5% reduction in screenshot transfer bytes in one 
 
 ## Get started
 
+From v0.6.1, install the command through npm (Node.js 20+):
+
+```sh
+npm install -g computerpilot
+computer-pilot mcp-config
+# Codex configuration (TOML):
+computer-pilot mcp-config --format toml
+```
+
+Copy the generated MCP entry into your client and reconnect. Windows x64 and macOS 14+ arm64 are supported. `computer-pilot info` shows the installed paths. If the npm version has not been published yet, use the archives below. [npm installation and publishing](docs/NPM.md)
+
+Install the skill with [Vercel Skills CLI](https://github.com/vercel-labs/skills) (Node.js 22.20+), for example globally for Codex:
+
+```sh
+npx skills add ClarkWain/ComputerPilot --skill computerpilot -a codex -g -y
+```
+
+Omit `-a codex` to choose another agent, or `-g` for a project install. Skill installation supplies instructions; MCP registration and OS permissions remain explicit setup steps.
+
+In Windows PowerShell, use `npm.cmd` / `npx.cmd` if script-shim execution or argument forwarding is restricted.
+
 Download a **Core** archive from [Releases](https://github.com/ClarkWain/ComputerPilot/releases), verify `SHA256SUMS.txt`, extract it, and point your MCP client at its executable:
 
 ```json
@@ -102,7 +123,7 @@ Download a **Core** archive from [Releases](https://github.com/ClarkWain/Compute
 }
 ```
 
-On Windows, use `C:/tools/ComputerPilot/bin/computer-pilot.exe` and install Microsoft Visual C++ 2015–2022 x64 Runtime. On macOS, grant Accessibility and Screen Recording permission to the actual executable or its launching host. The initial macOS release targets **Apple Silicon** and is **unsigned and not notarized**; see the [installation guide](docs/INSTALLATION.md) before running a downloaded archive.
+On Windows, use `C:/tools/ComputerPilot/bin/computer-pilot.exe`. Core 0.6.1+ statically links the Visual C++ runtime; older 0.6.0 archives require Microsoft Visual C++ 2015–2022 x64 Runtime. On macOS, grant Accessibility and Screen Recording permission to the actual executable or its launching host. The initial macOS release targets **Apple Silicon** and is **unsigned and not notarized**; see the [installation guide](docs/INSTALLATION.md) before running a downloaded archive.
 
 Core runs without Node, Python or model weights. Source builds require CMake 3.29+, Visual Studio 2022 on Windows, or Xcode Command Line Tools on macOS 14+. Build/test tooling additionally uses Python 3 and PowerShell:
 

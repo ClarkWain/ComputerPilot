@@ -32,7 +32,11 @@ foreach($media in $publicMedia.Keys){if(-not(Test-Path -LiteralPath (Join-Path $
 $config=Get-Content -LiteralPath (Join-Path $Path 'mcp.example.json') -Raw|ConvertFrom-Json
 if($config.mcpServers.'computer-pilot'.args[0] -ne 'serve'){throw 'Invalid MCP example'}
 $capabilities=& (Join-Path $Path $program) capabilities | ConvertFrom-Json
-if($capabilities.version -ne '0.6.0'){throw "Unexpected packaged version: $($capabilities.version)"}
+$project=Get-Content -LiteralPath (Join-Path $PSScriptRoot '../CMakeLists.txt') -Raw
+if($project -notmatch 'project\(ComputerPilot VERSION ([0-9]+\.[0-9]+\.[0-9]+)'){throw 'Missing project version'}
+if($capabilities.version -ne $Matches[1]){throw "Unexpected packaged version: $($capabilities.version)"}
+$coreManifest=Get-Content -LiteralPath (Join-Path $Path 'core-manifest.json') -Raw | ConvertFrom-Json
+if($coreManifest.name -ne 'ComputerPilot' -or $coreManifest.version -ne $capabilities.version){throw 'Core manifest and native version differ'}
 $aseprite=Get-Content -LiteralPath (Join-Path $Path 'profiles/aseprite-vision-en/profile.json') -Raw|ConvertFrom-Json
 if($aseprite.actions.action -contains 'aseprite.saveAsDefault'){throw 'Unsafe Aseprite save action must not ship'}
 Write-Output 'Package checks passed'

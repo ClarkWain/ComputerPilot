@@ -13,6 +13,19 @@ if((Test-Path -LiteralPath $destination) -and -not $Update){throw 'Installation 
 Get-ChildItem -LiteralPath $source | ForEach-Object {Copy-Item -LiteralPath $_.FullName -Destination $destination -Recurse -Force}
 $exe=@((Join-Path $root 'bin/computer-pilot.exe'),(Join-Path $root 'bin/computer-pilot'),(Join-Path $root 'build/core/Release/computer-pilot.exe'),(Join-Path $root 'build/core/computer-pilot')) |
     Where-Object {Test-Path -LiteralPath $_} | Select-Object -First 1
+if(-not $exe) {
+    $commandName=if($env:OS -eq 'Windows_NT'){'computer-pilot.cmd'}else{'computer-pilot'}
+    $npmCommand=Get-Command $commandName -ErrorAction SilentlyContinue
+    if($npmCommand) {
+        try {
+            $info=(& $npmCommand.Source info | ConvertFrom-Json)
+            if($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $info.executable)) {
+                $exe=$info.executable
+                $root=$info.root
+            }
+        } catch { Write-Warning 'The npm command could not resolve its native package; use computer-pilot info to diagnose.' }
+    }
+}
 @{root=$root;executable=$exe;note='Local installation hint, verify existence before use; no MCP or permission settings changed.'} |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destination 'installation.json') -Encoding UTF8
 Write-Output "Installed skill: $destination. Start a new agent session to discover it."

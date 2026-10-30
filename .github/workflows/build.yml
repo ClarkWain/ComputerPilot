@@ -11,11 +11,30 @@ concurrency:
   group: builds-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  npm-packaging:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: Install cross-platform archive reader
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libarchive-tools
+      - name: npm assembly and publishing tests
+        run: npm test
   core:
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: npm package tests
+        run: npm test
       - name: Configure and build
         shell: pwsh
         run: |
@@ -45,6 +64,15 @@ jobs:
           Compress-Archive -Path out/dist/ComputerPilot -DestinationPath out/ComputerPilot-windows-x64-core.zip
           $hash = (Get-FileHash out/ComputerPilot-windows-x64-core.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  ComputerPilot-windows-x64-core.zip" | Set-Content -Encoding ascii out/SHA256SUMS-windows.txt
+      - name: npm global install and MCP smoke
+        shell: pwsh
+        run: |
+          npm.cmd run prepare:npm -- --core out/dist/ComputerPilot --platform win32-x64 --out out/npm-smoke
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          npm.cmd run smoke:npm -- --packages out/npm-smoke
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Skills CLI install check
+        run: npm run test:skills
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ComputerPilot-windows-x64-core
@@ -58,6 +86,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - name: npm package tests
+        run: npm test
       - name: Configure and build macOS core
         run: |
           cmake --preset core-only
@@ -86,6 +119,12 @@ jobs:
           tar -czf out/ComputerPilot-macos-arm64-core.tar.gz -C out/dist ComputerPilot
           cd out
           shasum -a 256 ComputerPilot-macos-arm64-core.tar.gz > SHA256SUMS-macos.txt
+      - name: npm global install and MCP smoke
+        run: |
+          npm run prepare:npm -- --core out/dist/ComputerPilot --platform darwin-arm64 --out out/npm-smoke
+          npm run smoke:npm -- --packages out/npm-smoke
+      - name: Skills CLI install check
+        run: npm run test:skills
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ComputerPilot-macos-arm64-core

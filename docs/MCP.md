@@ -6,6 +6,8 @@ ComputerPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state
 
 ## 配置
 
+npm 安装后，运行 `computer-pilot mcp-config` 获取通用 JSON，或用 `computer-pilot mcp-config --format toml` 获取 Codex TOML；复制配置并重新连接客户端。它直接定位本机原生程序，避免 Windows `.cmd` shim 的启动差异。`computer-pilot info` 返回程序及资源目录；skill 的安装命令见 [安装指南](INSTALLATION.md)。
+
 ```json
 {"mcpServers":{"computer-pilot":{"command":"C:/实际安装目录/bin/computer-pilot.exe","args":["serve"]}}}
 ```

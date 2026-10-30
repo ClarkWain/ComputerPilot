@@ -1,5 +1,26 @@
 # Install ComputerPilot Core
 
+## npm and agent skill
+
+From version 0.6.1, the npm channel provides the native command (Node.js 20+):
+
+```sh
+npm install -g computerpilot
+computer-pilot mcp-config
+# Codex configuration (TOML):
+computer-pilot mcp-config --format toml
+```
+
+Use the generated MCP configuration and reconnect the client. Install the skill separately with Skills CLI (Node.js 22.20+):
+
+```sh
+npx skills add ClarkWain/ComputerPilot --skill computerpilot -a codex -g -y
+```
+
+Neither command registers MCP or grants OS permissions automatically. See [npm setup and troubleshooting](NPM.md); an npm E404 means the package/version has not been published yet.
+
+## Direct archives
+
 Download an archive and `SHA256SUMS.txt` from [ComputerPilot Releases](https://github.com/ClarkWain/ComputerPilot/releases). The first public release is v0.6.0; older preserved tags describe DesktopPilot source snapshots and do not imply a new release archive.
 
 ## Verify the download
@@ -20,7 +41,7 @@ Compare the result with the matching line in `SHA256SUMS.txt` from that release.
 
 ## Windows x64
 
-Install Microsoft Visual C++ 2015–2022 x64 Runtime. Run `bin/computer-pilot.exe doctor` in the same interactive user session as the target application. Configure your MCP client to run the full executable path with the argument `serve`. Windows Core validates Replay recipes; it does not execute the macOS drawing recipe.
+Core 0.6.1+ statically links the Visual C++ runtime. Older 0.6.0 archives require Microsoft Visual C++ 2015–2022 x64 Runtime. Run `bin/computer-pilot.exe doctor` in the same interactive user session as the target application. Configure your MCP client to run the full executable path with the argument `serve`. Windows Core validates Replay recipes; it does not execute the macOS drawing recipe.
 
 ## macOS 14+, Apple Silicon
 

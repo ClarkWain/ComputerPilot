@@ -40,6 +40,8 @@ cmake --build build/consumer --config Release --parallel 4
 
 `add_subdirectory` 提供 `ComputerPilot::Core`、`ComputerPilot::Desktop`、`ComputerPilot::Service`。当前不提供稳定 ABI 或安装式 find_package SDK。
 
+Windows 的 `core-only` preset 通过 `DP_STATIC_RUNTIME=ON` 静态链接运行库，便于分发。嵌入式 SDK 默认保留 DLL 运行库；若消费方显式选择静态运行库，需让自己的目标使用相同设置。静态选项只支持关闭 Torch/OCR 的 Core 构建。
+
 ## 分发包
 
 ```powershell
