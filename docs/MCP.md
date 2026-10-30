@@ -10,7 +10,7 @@ DesktopPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state`
 
 将两个路径替换为真实路径。发行包内固定 Node 运行时会启动同会话原生 worker；源码开发可运行 `node node/dist/src/index.js`，worker 默认位于 `build/release/Release`，可用 `DP_NATIVE_EXE` 指定。服务必须和目标应用在同一个 Windows 用户会话、输入桌面中运行，不能从不允许输入的隔离环境启动。
 
-初始化时实际 worker 执行桌面环境检查；Node 服务在初始化说明中携带 `desktopPreflight`，环境不可用时还会写入 stderr。输入前再次检查，不需要 Agent 另调环境工具。**连接成功不代表环境可用。** 宿主隐藏初始化说明时不能编造 ready:true，仍须处理执行器返回的 `desktop_environment_not_ready` 和诊断。启动诊断写 stderr；stdout 专用于 JSON-RPC。
+初始化时实际 worker 执行桌面环境检查；Node 服务在 `serverInfo._meta['desktopPilot/desktopPreflight']` 提供机器可读结果，并在初始化说明中携带相同 `desktopPreflight`，环境不可用时还会写入 stderr。旧 C++ 服务保留顶层 `_meta['desktopPilot/desktopPreflight']`。输入前再次检查，不需要 Agent 另调环境工具。**连接成功不代表环境可用。** 宿主隐藏初始化诊断时不能编造 ready:true，仍须处理执行器返回的 `desktop_environment_not_ready` 和诊断。启动诊断写 stderr；stdout 专用于 JSON-RPC。源码构建和只读连接检查见 [入门脚本](../examples/onboarding/README.md)。
 
 ## 四个工具的分工
 
@@ -27,7 +27,7 @@ DesktopPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state`
 
 窗口焦点、观察状态与控件引用校验由执行器负责。Agent 需要判断环境结果、明确目标、依据观察执行并验收；自动检查报错后不能继续发送动作。不传 `state_id`，不插入激活动作。`activate:false` 仅用于后台只读诊断。
 
-`mode:image` 完全跳过 UI Automation 和语义发现，适用于画布验收及 UIA 故障后的基础操作。返回 `semantic.status:not_checked`，不能将空 profiles 解释成不兼容。截图默认只返回本机 `capture.path` 和尺寸等信息；需要 MCP 图片块时传 `image_delivery:"inline"`。`mode:both` 在可恢复的 UIA 查询失败时保留截图路径，错误放在 `inspection`；若 worker 被终止并返回 `referencesInvalidated:true`，先重新 `list_windows`，再使用新 window_id 截图。
+`mode:image` 完全跳过 UI Automation 和语义发现，适用于画布验收及 UIA 故障后的基础操作。返回 `semantic.status:not_checked`，不能将空 profiles 解释成不兼容。截图默认只返回服务端本机 `capture.path` 和尺寸等信息；远端宿主通常需要 MCP 图片块，传 `image_delivery:"inline"`。`inline`、`region`、`max_edge` 必须搭配 `mode:image` 或 `both`，不能省略 mode 使用默认 controls。`detail:full` 只展开控件字段和文本，不增加树深度或取消查询上限。`mode:both` 在可恢复的 UIA 查询失败时保留截图路径，错误放在 `inspection`；若 worker 被终止并返回 `referencesInvalidated:true`，先重新 `list_windows`，再使用新 window_id 截图。
 
 `change_mode:"delta"` 按当前 MCP 连接、窗口和观察参数比较上一份完整观察。首次调用或观察模式、区域、分辨率、图片交付方式、窗口几何/DPI 变化时返回 `change:{kind:"full",reason}`；后续只返回有变化的 `window` 字段、`controls.added/updated/removed`、语义或检查状态。完全相同时仅返回 `status`、`window_id` 和 `change:{kind:"unchanged"}`。未返回的字段表示沿用上次结果；`updated[].set` 与 `unset` 分别表示字段更新和删除。截图内容相同则省略 `capture`，即使请求了内联图片也不附加 image 块。局部变化时 `capture.kind:"patch"` 返回变化区域图片、其在原图中的 `rect`、原图尺寸 `frame` 和可按需读取的 `fullPath`；大范围变化或无法可靠比较时返回完整新图。局部图不改变基础输入的完整画面坐标系。Agent 不传状态编号；需要重新同步时用默认 `change_mode:"full"`。UIA 检查不完整时返回全量并清除基线，不推断控件被移除。即使增量省略了未变控件，当前连接内这些 `control_id` 仍可用于下一次基础操作。
 
@@ -38,6 +38,10 @@ DesktopPilot 的 MCP 只提供四个工具：`list_windows`、`get_window_state`
 UIA 按需初始化，使用 `IUIAutomation2` 配置并回读连接、事务超时（各 2000 ms），配置失败时明确报告 UIA 不可用，不阻断纯截图。它们是 [provider 单次请求超时](https://learn.microsoft.com/en-us/windows/win32/api/uiautomationclient/nf-uiautomationclient-iuiautomation2-put_transactiontimeout)，不是整次查询的硬性 2 秒上限。语义批次仍有独立的 600 秒总预算；COM/进程故障最终由 worker 隔离处理。
 
 ## 调用方式
+
+增量客户端可复用 [JSON 归并示例](../examples/onboarding/merge-observation.mjs)：`state = mergeObservation(state, result.structuredContent)`。`delta.window.set/unset` 更新原状态顶层；控件按 `control_id` 归并。每个窗口独立保存基线，连接重建或观察失败后丢弃基线并请求全量；该函数报错时也先重新观察，不使用旧状态发送输入。
+
+示例只还原 JSON，不拼接图片像素。`capture.kind:patch` 的坐标仍按完整 `frame`；本机查看完整新图可用 `capture.fullPath`。远端无法读路径且不能拼接旧图时，重新请求 `change_mode:full, mode:image, image_delivery:inline`，不要把局部图左上角作为输入原点。delta 减少交付内容，仍会进行现场观察。
 
 MCP 宿主直接调用四个工具，Agent 阅读返回值决定下一步。没有宿主时启动 `node node/dist/src/index.js` 或发行包的 `runtime/node.exe node/dist/src/index.js`，保持一个服务进程，用下节 JSON-RPC 协议通讯。
 

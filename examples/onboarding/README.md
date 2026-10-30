@@ -1,6 +1,15 @@
 # 从第一个任务迁移到实际应用
 
-在仓库或 Release 根目录执行，入口自动查找本目录的二进制；也可传 -Executable 指定真实程序。只使用原生 DesktopPilot 和 PowerShell。
+源码先构建当前 Node 入口和原生 worker（Node.js 22+、PowerShell 7）：
+
+```powershell
+cmake --preset windows-release
+cmake --build --preset windows-release
+npm ci --prefix node
+npm run build --prefix node
+```
+
+下面的入口按脚本位置查找源码 `node/dist/src/index.js`，其次查找 Node 包和正式包；不自动选择残留的 `build/core`。也可传 `-Executable` 指定 JS、Node 包 `.cmd` 或旧 C++ `.exe`。从其他工作目录调用时使用脚本的完整路径。
 
 ## 第一步：连接
 
@@ -8,7 +17,7 @@
 pwsh -NoProfile -File examples/onboarding/start.ps1 -Task check
 ```
 
-ready 表示实际 worker 的环境预检通过。失败看返回原因，先修正启动方式，不重试点击。DesktopPilot 必须与目标应用处于同一用户会话和输入桌面，且输入权限可用。
+ready 表示实际 worker 的环境预检通过。Node 初始化的机器可读值为 `serverInfo._meta['desktopPilot/desktopPreflight']`；客户端也兼容旧 C++ 顶层 `_meta`。失败会返回非零退出码；缺少预检不能视为 ready。失败看返回原因，先修正启动方式，不重试点击。DesktopPilot 必须与目标应用处于同一用户会话和输入桌面，且输入权限可用。
 
 ## 第二步：完成表单任务
 
@@ -17,6 +26,8 @@ pwsh -NoProfile -File examples/onboarding/start.ps1 -Task form
 ```
 
 打开专用测试窗口，使用四工具接口完成：连接 → 找窗口 → 获取状态 → 填写并 Apply → 获取状态验收。预期 status:passed、fieldsVerified:1、applicationResult 为 Applied: Hello DesktopPilot、staleObservationRejected:true。结束只关闭本次创建的测试窗口。
+
+`windows-release` 同时构建该测试窗口，不需要旧 C++ 服务。自定义 worker 路径时设 `DP_NATIVE_EXE`；表单/绘图优先在指定入口或 worker 同目录寻找测试窗口，再查默认 `build/release/Release`。缺少测试窗口时先构建，不操作现有用户窗口。
 
 这个例子同时教会三件事：从观察找控件、把稳定动作合成批次、通过应用变化验收。旧 observation 的重复操作必须被拒绝，而不是再次点击。
 

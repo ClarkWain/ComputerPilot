@@ -152,7 +152,7 @@ export async function runModern(nativeCall: NativeCall, windowRef: string, profi
               throw new Error('opacity_readback_mismatch');
             opacityReady = true;
           }
-        } else { await ensureFillColor(a.color); await select(selectors.fill); }
+        } else { await ensureFillColor(a.color); await select(selectors.fill); lastBrush = ''; }
         const c = await canvas();
         if (!equal(c, initial)) throw new Error('canvas_layout_changed');
         phase = 'draw'; drawn = true;

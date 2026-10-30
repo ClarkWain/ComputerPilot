@@ -66,7 +66,7 @@ async function desktopHost(runDirectory: string): Promise<{host: OrchestrationHo
     return actual;
   } catch(error) {native.close();native=undefined;throw error;}
   };
-  return {host:{execute:async request=>(await ensure()).execute(request),
+  return {host:{desktopResultContract:'desktop-v1',execute:async request=>(await ensure()).execute(request),
     releaseDesktop:async()=>actual?.releaseDesktop?.()},close:()=>native?.close()};
 }
 

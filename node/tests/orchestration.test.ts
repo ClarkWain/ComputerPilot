@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { answerOrchestration, orchestrationStatus, reconcileOrchestration, repairOrchestrationTail, resumeOrchestration,
   startOrchestration } from '../src/orchestration/runner.js';
 import type { OrchestrationHost } from '../src/orchestration/types.js';
+import { CommandNotDispatchedError } from '../src/orchestration/types.js';
 
 async function fixture(script: string) {
   const root = await mkdtemp(join(tmpdir(),'dp-orchestration-'));
@@ -38,6 +39,7 @@ test('dynamic items, branching, question and resume reuse committed command resu
       {items:[{id:'first'},{id:'second',ask:true}]},f.run,host);
     assert.equal(first.status,'waiting_decision');
     assert.equal(first.pending?.kind,'ask');
+    await assert.rejects(reconcileOrchestration(f.run,first.pending!.key,'yes','checked'),/current uncertain command/i);
     assert.deepEqual(calls,['root/item:first/desktop:editor/inspect','root/item:first/desktop:editor/write']);
     await assert.rejects(resumeOrchestration(f.run,host),/decision|reconciliation/i);
     await assert.rejects(answerOrchestration(f.run,'maybe'),/recorded choices/i);
@@ -111,6 +113,161 @@ test('uncertain desktop step blocks replay until explicit reconciliation',async(
     assert.equal(dispatches,1);
   } finally {await f.cleanup();}
 });
+
+test('an ordinary error cannot claim not-dispatched recovery through text or fields',async()=>{
+  const f=await fixture(`export default async ctx => ctx.withDesktop('editor',desktop =>
+    desktop.step('write',{target:{titleContains:'Editor'},profile:'test',
+      actions:[{action:'write',args:{}}],before:{titleContains:'Editor'},expect:{titleContains:'Editor'}}));`);
+  let calls=0;
+  const host:OrchestrationHost={async execute(){
+    calls++;throw Object.assign(new Error('not_started; not_dispatched'),{dispatch:'not_dispatched'});
+  }};
+  try {
+    const first=await startOrchestration('untrusted error fields',f.scriptPath,{},f.run,host);
+    assert.equal(first.status,'needs_reconciliation');assert.equal(first.pending?.dispatch,undefined);
+    await assert.rejects(resumeOrchestration(f.run,host),/reconciliation/i);
+    assert.equal(calls,1);
+  } finally {await f.cleanup();}
+});
+
+for (const kind of ['observe','waitFor'] as const) {
+  test(`built-in ${kind} reconciliation rejects malformed snapshots without changing the journal`,async()=>{
+    const args={target:{titleContains:'Editor'},...(kind==='waitFor'?
+      {expect:{titleContains:'Editor'},timeoutMs:1000}:{})};
+    const f=await fixture(`export default async ctx => ctx.withDesktop('editor',desktop =>
+      desktop.${kind}('inspect',${JSON.stringify(args)}));`);
+    let calls=0;
+    const host:OrchestrationHost={desktopResultContract:'desktop-v1',async execute(){
+      calls++;throw new Error('Observation response lost');
+    }};
+    try {
+      const first=await startOrchestration('snapshot reconciliation',f.scriptPath,{},f.run,host);
+      const journalPath=join(f.run,'execution.jsonl');
+      const before=await readFile(journalPath);
+      const snapshot={title:'Editor',controls:[{name:'Message',role:'Edit',value:'ready',enabled:true,offscreen:false}]};
+      for(const value of [null,{}, {title:42,controls:[]},{title:'Editor'},
+        {...snapshot,controls:[{name:'Message',role:42}]},
+        {...snapshot,controls:[{name:'Message',role:'Edit',value:null}]},
+        {...snapshot,controls:[{name:'Message',role:'Edit',enabled:1}]},
+        {...snapshot,controls:[{name:'Message',role:'Edit',offscreen:'false'}]},
+        {...snapshot,inspection:[]},{...snapshot,inspection:{status:'unknown'}},
+        {...snapshot,inspection:{status:['ok']}},
+        {...snapshot,inspection:{status:'ok',truncated:'false'}},
+        {...snapshot,inspection:{status:'ok',visited:-1}},
+        {...snapshot,inspection:{status:'ok',providerError:{message:'failed'}}},
+        {...snapshot,inspection:{status:'ok',metrics:{queryMs:'fast'}}}]) {
+        await assert.rejects(reconcileOrchestration(f.run,first.pending!.key,value,'Checked snapshot'),
+          /desktop reconciliation result/i);
+        assert.deepEqual(await readFile(journalPath),before);
+        assert.deepEqual(await orchestrationStatus(f.run),first);
+      }
+      const value={...snapshot,inspection:{status:'ok',evidenceComplete:true,visited:1,
+        metrics:{queryMs:2},extra:'future'},extra:{future:true}};
+      await reconcileOrchestration(f.run,first.pending!.key,value,'Checked snapshot');
+      const done=await resumeOrchestration(f.run,host);
+      assert.equal(done.status,'completed');assert.deepEqual(done.result,value);assert.equal(calls,1);
+      const events=(await readFile(journalPath,'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+      assert.equal(events.find(event=>event.kind==='command_commit')?.verification,'manual_acceptance');
+    } finally {await f.cleanup();}
+  });
+}
+
+for (const [expect,verification] of [
+  [{titleContains:'Editor'},'condition_checked'],
+  [{control:{name:'Message',value:'ready'}},'control_checked'],
+  [{file:{path:'out.png'}},'file_checked'],
+  [{file:{path:'out.png'}},'file_hash_checked'],
+  [{file:{path:'out.png',sha256:'a'.repeat(64)}},'file_hash_checked']
+] as const) {
+  test(`built-in step reconciliation accepts ${verification}${'file' in expect && 'sha256' in expect.file?
+    ' for a hash condition':''} and never repeats input`,async()=>{
+    const f=await fixture(`export default async ctx => ctx.withDesktop('editor',desktop =>
+      desktop.step('save',{target:{titleContains:'Editor'},profile:'test',actions:[{action:'save',args:{}}],
+        before:{titleContains:'Editor'},expect:${JSON.stringify(expect)}}));`);
+    let calls=0;
+    const host:OrchestrationHost={desktopResultContract:'desktop-v1',async execute(){
+      calls++;throw new Error('Response lost after input');
+    }};
+    try {
+      const first=await startOrchestration('step reconciliation',f.scriptPath,{},f.run,host);
+      const journalPath=join(f.run,'execution.jsonl'),before=await readFile(journalPath);
+      const result={status:'verified',title:'Editor',verification};
+      for(const value of [null,{}, {saved:true},{...result,status:'ok'},{...result,title:42},
+        {...result,verification:'manual_acceptance'},
+        {...result,verification:[verification]},
+        {...result,verification:verification==='condition_checked'?'control_checked':'condition_checked'}]) {
+        await assert.rejects(reconcileOrchestration(f.run,first.pending!.key,value,'Checked saved document'),
+          /desktop reconciliation result/i);
+        assert.deepEqual(await readFile(journalPath),before);
+        assert.deepEqual(await orchestrationStatus(f.run),first);
+      }
+      await assert.rejects(resumeOrchestration(f.run,host),/reconciliation/i);
+      await reconcileOrchestration(f.run,first.pending!.key,result,'Checked saved document');
+      // The frozen result contract does not change when a different host is supplied on resume.
+      const done=await resumeOrchestration(f.run,{async execute(){throw new Error('No repeated input');}});
+      assert.equal(done.status,'completed');assert.deepEqual(done.result,result);assert.equal(calls,1);
+      const events=(await readFile(journalPath,'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+      assert.equal(events.find(event=>event.kind==='command_commit')?.verification,'manual_acceptance');
+    } finally {await f.cleanup();}
+  });
+}
+
+test('desktop result contract leaves custom Suno command results unrestricted',async()=>{
+  const f=await fixture(`export default async ctx => ctx.suno('submit',{
+    op:'submit',song:{title:'Song',lyrics:'Lyrics',style:'Pop'},baselineUrls:[]});`);
+  let calls=0;
+  const host:OrchestrationHost={desktopResultContract:'desktop-v1',async execute(){
+    calls++;throw new Error('Submission response lost');
+  }};
+  try {
+    const first=await startOrchestration('custom result',f.scriptPath,{},f.run,host);
+    const result={saved:true,trackUrls:['https://example.test/song']};
+    await reconcileOrchestration(f.run,first.pending!.key,result,'Checked submission');
+    const done=await resumeOrchestration(f.run,host);
+    assert.equal(done.status,'completed');assert.deepEqual(done.result,result);assert.equal(calls,1);
+  } finally {await f.cleanup();}
+});
+
+test('unknown frozen desktop result contracts are rejected without journal changes',async()=>{
+  const f=await fixture(`export default async ctx => ctx.checkpoint('done');`);
+  const host:OrchestrationHost={async execute(){throw new Error('unexpected host call');}};
+  try {
+    await startOrchestration('invalid contract',f.scriptPath,{},f.run,host);
+    const definitionPath=join(f.run,'definition.json');
+    const definition=JSON.parse(await readFile(definitionPath,'utf8'));
+    await writeFile(definitionPath,JSON.stringify({...definition,desktopResultContract:'unknown'}));
+    const before=await readFile(join(f.run,'execution.jsonl'));
+    await assert.rejects(orchestrationStatus(f.run),/definition is invalid/i);
+    await assert.rejects(resumeOrchestration(f.run,host),/definition is invalid/i);
+    assert.deepEqual(await readFile(join(f.run,'execution.jsonl')),before);
+  } finally {await f.cleanup();}
+});
+
+for (const interruptedRetry of [false,true]) {
+  test(`a not-dispatched retry preserves the exact request${interruptedRetry?' across a retry journal crash':''}`,async()=>{
+    const f=await fixture(`import { value } from './helper.mjs';
+      export default async ctx => ctx.withDesktop('editor',desktop => desktop.step('write',{
+        target:{titleContains:'Editor'},profile:'test',actions:[{action:'write',args:{text:value}}],
+        before:{titleContains:'Editor'},expect:{titleContains:'Editor'}}));`);
+    const helper=join(f.root,'helper.mjs');
+    let calls=0;
+    const host:OrchestrationHost={async execute(){calls++;throw new CommandNotDispatchedError('Precondition failed');}};
+    try {
+      await writeFile(helper,"export const value='old';\n");
+      const first=await startOrchestration('retry identity',f.scriptPath,{},f.run,host);
+      assert.equal(first.status,'retry_available');
+      if(interruptedRetry) {
+        const events=(await readFile(join(f.run,'execution.jsonl'),'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+        await appendFile(join(f.run,'execution.jsonl'),JSON.stringify({seq:events.length+1,
+          time:new Date().toISOString(),kind:'command_retry',key:first.pending!.key,reason:'Explicit resume'})+'\n');
+      }
+      await writeFile(helper,"export const value='changed';\n");
+      const result=await resumeOrchestration(f.run,host);
+      assert.equal(result.status,'failed');assert.match(result.message??'',/retry command history diverged/i);
+      assert.equal(calls,1);
+    } finally {await f.cleanup();}
+  });
+}
 
 test('script drift rejects resume before any new command',async()=>{
   const f=await fixture(`export default async ctx => { await ctx.ask('choice',{question:'Choose',choices:['a','b']}); }`);

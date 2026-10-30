@@ -45,6 +45,8 @@ DesktopPilot 负责观察 Windows 窗口并派发操作；Agent 负责辨认目�
 
 没有 MCP 工具时，读取本 Skill 目录的 `installation.json`，确认 `executable` 和可选 `args` 指向现存文件。Node 便携包用 `runtime/node.exe` 启动同包的 `node/dist/src/index.js`；旧 C++ 包用 `desktop-pilot.exe serve`。保持一个服务进程，直到任务结束，不为每次调用重启。仓库的 `examples/onboarding/client.ps1` 是可选通讯客户端。安装 Skill 本身不会注册 MCP；找不到程序或连接时报告实际缺失条件。
 
+`root` 相对 `installation.json` 所在目录解析；`executable:"node"` 用 `Get-Command node` 验证 PATH 中的运行时，路径形式的 executable 和入口 args 相对 root 解析并转换为绝对路径，不能依赖当前工作目录。手动复制 Skill 到其他目录后运行源仓库的 `scripts/install.ps1`，生成该机器的实际 root、command 和 args；静态提示不能自动找到搬迁后的源码。
+
 自行实现 MCP 客户端时，按 UTF-8 JSON-RPC over stdio 完成 `initialize`、`notifications/initialized` 和 `tools/call`。正常结果读 `result.structuredContent`；`result.content` 仅用于请求的图片等内容，不重复解析成第二份结果。顶层 `error` 是协议错误，`result.isError:true` 是工具错误。详细握手和超时见 [通讯说明](references/protocol.md)。
 
 自行实现客户端的最小消息顺序：

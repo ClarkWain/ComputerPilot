@@ -1,10 +1,10 @@
 # 应用语义与 profile
 
-`execute_semantic` 把应用意图交给 C++ 中间层。例如画圆时，Agent 给出几何和样式，中间层完成工具选择、填充、RGB 回读、绘制和提交。一个语义批次只返回最终结果，减少 Agent 逐控件介入。
+当前 Node 分支的 `execute_semantic` 把应用意图交给 TypeScript 适配器，C++ 原生 worker 负责 UIA、键鼠和截图。例如画圆时，Agent 给出几何和样式，适配器完成工具选择、填充、RGB 回读、绘制和提交。一个语义批次只返回最终结果，减少 Agent 逐控件介入。正式 v0.4.0 旧 C++ 包的实现入口另见文末迁移说明。
 
 ## 原理与操作流程
 
-语义层由三部分组成：Agent 给出 `{action,args}` 意图，profile 描述适配哪个界面及如何定位控件，C++ 动作实现把意图转换为基础输入和检查。profile 本身不执行鼠标操作，也不是交给模型解释的点击脚本。
+语义层由三部分组成：Agent 给出 `{action,args}` 意图，profile 描述适配哪个界面及如何定位控件，TypeScript 动作实现把意图转换为基础输入和检查。profile 本身不执行鼠标操作，也不是交给模型解释的点击脚本。
 
 以画红圆为例，Agent 只提交圆心、半径、填充和描边；程序验证当前应用，定位画布和椭圆工具，按需设置颜色、填充、描边，换算坐标，拖动绘制并提交图形。同批次后续圆沿用已确认的设置；菜单和颜色框等已知界面由执行器处理。
 
@@ -27,7 +27,7 @@
 - execute_semantic 在执行前重新匹配，显式指定 ID 也不能跳过检查。不会把 Paint 配置用于 Aseprite。
 - 这不是完整版本号认证；符合指纹仍需由具体动作检查布局和绘图结果。未滚动画布等条件目前仍需结合截图确认。
 
-默认从 exe 所在目录及上级安装目录查找 profiles，源码构建和 Release 布局都支持。可用环境变量 `DESKTOPPILOT_PROFILES_DIR` 指定完整目录；配置后只读取该目录。MCP 只接收 profile ID，不接收文件路径。
+Node 入口默认从模块位置解析仓库或便携包的 profiles 目录，定位逻辑见 [engine.ts](../node/src/profiles/engine.ts)。可用环境变量 `DESKTOPPILOT_PROFILES_DIR` 指定完整目录；配置后只读取该目录。MCP 只接收 profile ID，不接收文件路径。
 
 ## 当前 profile
 
@@ -122,7 +122,7 @@ get_window_state 的 semantic 对象返回 status、profiles、unavailable。pro
 
 unavailable 的元素包含 id 和 reasons，例如 dpi_mismatch、toolbar_too_narrow、ui_inspection_incomplete、control_not_unique:canvas。其他可执行程序的配置直接略过，不列入相关配置的失败原因。目录不存在时 profiles 为空，reason 为 profiles_directory_missing。
 
-当前目录提供调用示例，不提供每个动作的 JSON Schema。参数范围由 C++ 动作解析器校验，使用者按本文动作表和实际 example 填写；不能把示例里没出现的功能视为支持。
+当前目录提供调用示例，不提供每个动作的 JSON Schema。参数范围由 TypeScript 动作解析器校验，使用者按本文动作表和实际 example 填写；不能把示例里没出现的功能视为支持。
 
 ### profile.json 文件协议（schemaVersion 1/2）
 
@@ -141,7 +141,7 @@ unavailable 的元素包含 id 和 reasons，例如 dpi_mismatch、toolbar_too_n
 | minimumClientSize（v2） | 必填 `{width,height,unit:"dip96"}`；根据实测客户区的逻辑宽高判定，不达标时报 insufficient_client_area |
 | preferredClientSize（v2） | 可选 `{width,height,unit:"dip96"}`；新启动的匹配窗口可按此目标显式准备，并以 minimumClientSize 为最低要求 |
 | selectors | 命名控件定位对象；nameContains 为包含匹配，其余键如 name/role/automationId 为精确匹配 |
-| actions | 动作目录数组，每项含 action、description、example；只列 C++ 已实现并经适配的动作 |
+| actions | 动作目录数组，每项含 action、description、example；只列对应适配器已实现的动作 |
 | 适配器专属字段 | 当前 Paint 还使用 referenceToolSize、canvasInset、菜单选项、RGB 字段、brushes、save、clickSettleMs 等；按实际实现定义，不是通用操作指令 |
 
 匹配器还检查窗口未最小化、未被禁用，以及控件查询未截断。达到这些条件只代表可尝试适配动作，不能证明绘图精度或作品质量。
@@ -191,8 +191,12 @@ v1 的 `recommendedWindow` 提供新建窗口的外框推荐尺寸（`units: dpi
 
 1. 用目标应用的实际窗口状态确定进程、窗口类、DPI、控件结构及坐标规则，选取能区分支持布局的控件指纹。
 2. 在 profiles 下建立独立目录和 profile.json，填写匹配条件、定位配置和准确的动作示例。
-3. 实现或扩展 C++ 适配器，包括参数验证、定位、动作执行、等待/回读、批次复用和失败返回。当前分派由 profiles.cpp 进入 semantic.perform，再由语义实现执行；manifest 没有动态脚本或插件入口。
+3. 在 [node/src/adapters](../node/src/adapters) 实现或扩展 TypeScript 适配器，包括参数验证、定位、动作执行、等待/回读、批次复用和失败返回；在 [ProfileEngine](../node/src/profiles/engine.ts) 接入发现检查、动作过滤和执行分派。当前适配器为 classic-paint.ts、modern-paint.ts 和 aseprite.ts；新增 manifest 不能自动加载新适配器代码。
 4. 验证不匹配窗口会被拒绝，支持窗口能执行，并测试中途失败、设置变化和实际结果。绘图还需对照位置、尺寸、颜色，不能仅检查 status:ok。
 5. 同步示例和文档，部署配置及包含对应代码的程序。使用新状态重新发现 profile，再执行。
 
-当前执行器是已实现动作的 C++ 适配器，不是任意 JSON 配方解释器。增加另一类软件需要实现适配器、动作参数验证、实际控件匹配和结果测试；单纯改 profile 的名字不能获得新软件能力。配置示例应与代码和 UI 实测一起维护。
+当前执行器只派发已实现动作，不是任意 JSON 配方解释器。增加另一类软件需要实现适配器、动作参数验证、实际控件匹配和结果测试；单纯改 profile 的名字不能获得新软件能力。配置示例应与代码和 UI 实测一起维护。
+
+### 旧 C++ 入口（仅迁移比较）
+
+正式 v0.4.0 发行包仍使用旧 C++ 服务，由 `src/profiles.cpp` 经 `semantic.perform` 进入 C++ 语义实现，默认从 exe 和安装目录查找 profiles。源码中的旧服务仅由 `core-only` 或 `legacy-windows-release` 显式构建；当前 Node 适配请使用上面的 TypeScript 入口。不要将 Node 分支新增的新版 Paint 或 Aseprite 能力当作旧发行包已提供。

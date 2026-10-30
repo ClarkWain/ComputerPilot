@@ -6,7 +6,7 @@ import type { JsonObject } from '../native/client.js';
 import { acquireDesktopLock } from './lock.js';
 import type { ReplayRecipe } from './recipe.js';
 import { conditionProblems } from './conditions.js';
-import { hasStrongResumeBaseline, inspectRun, recipeHash } from './recovery.js';
+import { inspectRun, recipeHash } from './recovery.js';
 import { checkCapture, waitForStableImage } from './visual.js';
 
 export type ReplayApi = { call(tool: string, args: JsonObject): Promise<JsonObject> };
@@ -40,11 +40,9 @@ export async function runReplay(api: ReplayApi, recipe: ReplayRecipe, runDirecto
     // an action after waiting for the first process to finish.
     if (resume) {
       const inspection=await inspectRun(runDirectory,recipe);
-      if (inspection.state!=='resumable')
+      if (!inspection.canResume)
         throw new Error(`Replay cannot resume: ${inspection.reason??inspection.state}`);
       startIndex=inspection.committed;
-      if (!hasStrongResumeBaseline(recipe,startIndex))
-        throw new Error(`Replay cannot resume ${inspection.nextStep}: a document-specific before condition is required`);
       fullyVerified=inspection.verification==='verified';
     } else await mkdir(runDirectory, { recursive: false });
     journal = await open(resolve(runDirectory, 'execution.jsonl'), resume?'a':'wx');
@@ -77,6 +75,8 @@ export async function runReplay(api: ReplayApi, recipe: ReplayRecipe, runDirecto
       // An unsuccessful receipt may still mean that input took effect. Stop without retry.
       requireOk(result, `${step.id}: dispatch outcome requires inspection`);
       if (result.completed !== actions.length) throw new Error(`${step.id}: semantic action count was not confirmed`);
+      if (result.dispatch!==undefined && result.dispatch!=='returned')
+        throw new Error(`${step.id}: dispatch outcome was not confirmed`);
       if (step.settle) {
         const settled=await waitForStableImage(api,windowId,step.settle);
         await event({kind:'settled',step:step.id,...settled});

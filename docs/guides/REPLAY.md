@@ -9,12 +9,17 @@ Replay 目前是 Node 层的独立 CLI，公开 MCP 仍只有四个工具。第�
 ```powershell
 npm run build --prefix node
 npm run replay --prefix node -- validate ../examples/replay/save-paint
+npm run replay --prefix node -- check ../examples/replay/save-paint
 npm run replay --prefix node -- export ../examples/replay/save-paint G:\runs\save-paint.dpreplay
 npm run replay --prefix node -- play ../examples/replay/save-paint G:\runs\paint-001
 npm run replay --prefix node -- inspect ../examples/replay/save-paint G:\runs\paint-001
-# 仅在 inspect 返回 resumable 且下一步有强前置条件时：
+# 仅在 inspect 返回 canResume:true 时：
 npm run replay --prefix node -- resume ../examples/replay/save-paint G:\runs\paint-001
 ```
+
+`check` 先做与 `validate` 相同的格式和资源检查，再逐步读取当前安装的 profile 与动作目录，汇总未知 profile、未知动作、Node 未实现的 adapter 或动作。JSON 结果含 `formatValid`、`knownProfiles`、`knownActions`、`compatible` 及问题所在步骤、动作索引。兼容问题退出码为 1；坏配方仍报告原来的格式错误。默认 profile 目录相对于源码或安装包定位，也可用 `DP_PROFILES_DIR` 指定；目录和 `.dpreplay` 均可检查，缺少 native worker 不影响该命令。
+
+这是已知能力预检：`environmentChecked:false` 和 `parametersChecked:false` 表示没有检查 DPI、语言、目标窗口、动作参数或作品内容；不会启动 native worker、OCR 或派发桌面操作。通过后仍须在 `play` 中观察并匹配当前环境。`validate` 保持只检查格式与资源的行为。
 
 ### 从 Agent 操作生成草稿
 
@@ -27,11 +32,11 @@ npm run replay --prefix node -- draft 'G:\runs\pilot-recordings\agent-....jsonl'
 npm run replay --prefix node -- validate 'G:\runs\my-draft'
 ```
 
-`draft` 只处理已确认成功、每次一个动作的语义调用；遇到基础键鼠批次、多动作语义调用、结果不明、目标标题变化或缺少 profile 时拒绝生成，避免遗漏有副作用的操作。生成目录含 `manifest.json`、`steps.json` 和 `DRAFT-NOTES.md`。草稿会把 `document.saveAs` 的输出改为运行目录变量，但不会凭操作回执推断作品内容正确。请补充文档基线与内容级验收，再导出分享。
+`draft` 只处理已确认全部成功、每次 1–256 个动作且回执确认 profile 的语义调用；一个调用保留为一个步骤，不拆分批次。单动作仍使用 `action`，多动作使用 `actions`。遇到基础键鼠批次、部分执行、结果不明、目标标题变化或未确认 profile 时拒绝生成。单批含多个 `document.saveAs` 时也拒绝生成，因为当前一个 `expect.file` 无法覆盖所有输出；跨步骤的输出文件名不能碰撞。拒绝转换时不会创建草稿目录。生成目录含 `manifest.json`、`steps.json` 和 `DRAFT-NOTES.md`。草稿会把 `document.saveAs` 的输出改为运行目录变量，但不会凭操作回执推断作品内容正确。请补充文档基线与内容级验收，再导出分享。
 
 `validate` 只解析并检查格式与资源摘要，不操作桌面。`export` 生成单个 `.dpreplay`，拒绝固定进程 ID、绝对动作路径以及指向原稿目录外的资源链接；`validate` 和 `play` 都可直接读取该文件。导入检查归档路径、大小、资源声明与摘要。`play` 要求一个不存在的新运行目录，先检查原生 worker 的桌面环境，再取得独占输入锁。每步重新枚举窗口、观察 profile 与 `before`、记录 intent、执行本步语义动作、记录回执、等待 `expect` 成立。运行目录中的 `execution.jsonl` 按事件持久化；结果不明、部分执行或验证失败时停止，不自动重试。输出目录保留供人工核验。若某步只检查 profile 或文件元数据，运行结束标记为 `verification:partial`，不能据此认定作品内容已验收。
 
-`inspect` 只读取运行日志，并核对 recipe 内容摘要及已提交的步骤顺序。`resume` 不在结果不明的动作后自动续播；只允许从完整提交的步骤之后继续，且下一步 `before` 必须含控件精确值、文件 SHA-256 或阶段截图参考图，运行时会再次核对。仅有标题、profile 或文件不存在不足以证明文档仍是同一状态。继续播放是显式操作，不会重放已提交步骤；用户仍需确认其它应用状态没有改变。
+`inspect` 只读取运行日志，并核对 recipe 内容摘要及已提交的步骤顺序。`state:resumable` 保留原含义，表示日志具有完整提交的前缀；新增 `canResume` 才表示能否尝试显式续播，缺少下一步强 `before` 时返回 false 和 `reason`。运行完成或结果不明也返回 false。`resume` 使用相同诊断，不在结果不明的动作后自动续播；只允许从完整提交的步骤之后继续，且下一步 `before` 必须含控件精确值、文件 SHA-256 或阶段截图参考图，运行时会再次核对。仅有标题、profile 或文件不存在不足以证明文档仍是同一状态。继续播放是显式操作，不会重放已提交步骤；用户仍需确认其它应用状态没有改变。
 
 播放和 MCP 输入共用按当前 Windows 用户/会话命名的锁；MCP 的状态读取也会激活窗口，因此同样取得锁。当前锁只协调使用新版 Node 服务的进程，不能阻止用户、旧版 C++ 服务或其他自动化工具输入。运行前应保持桌面可交互。
 

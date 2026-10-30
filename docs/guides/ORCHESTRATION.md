@@ -28,20 +28,41 @@ node node/dist/src/orchestration/cli.js resume $runDir --trusted-script $script
 
 ## 作者接口
 
+下面是可直接运行的 [copy-field 模板](../../examples/orchestration/copy-field/definition.json)。先复制该目录，修改定义中的源/目标窗口标题、字段 `name` / `role` 和目标预期旧值 `beforeValue`；标题匹配多扇窗口时补充 `pid`。脚本本身如下：
+
 ```js
+function readUniqueText(state, field) {
+  const inspection = state.inspection;
+  if (!inspection || inspection.status !== 'ok' || inspection.truncated === true ||
+      inspection.has_more === true || inspection.evidenceComplete === false ||
+      (inspection.stopReason !== undefined && inspection.stopReason !== 'complete') ||
+      inspection.providerError || !Array.isArray(state.controls)) {
+    throw new Error('Source inspection is incomplete; no target input was dispatched');
+  }
+  const matches = state.controls.filter(control => control.name === field.name &&
+    control.role === field.role && control.enabled === true && control.offscreen === false);
+  if (matches.length !== 1 || typeof matches[0].value !== 'string') {
+    throw new Error('Source requires one enabled visible text field with a string value');
+  }
+  return matches[0].value;
+}
+
 export default async function run(ctx) {
   const input = await ctx.readInput('records');
   for (const record of input.records) {
     await ctx.item(record.id, async item => {
       const source = await item.withDesktop('source', desktop =>
-        desktop.observe('read', { target: { titleContains: 'Source App' } }));
-      const text = source.controls.find(control => control.name === 'Message').value;
+        desktop.observe('read', { target: record.source.target }));
+      const text = readUniqueText(source, record.source.field);
+      if (typeof record.target.beforeValue !== 'string') {
+        throw new Error('Target beforeValue must be a string');
+      }
       await item.withDesktop('target', desktop => desktop.step('fill', {
         mode: 'batch',
-        target: { titleContains: 'Target App' },
-        actions: [{ type: 'fill_text', control: { name: 'Message', role: 'Edit' }, text }],
-        before: { control: { name: 'Message', value: '' } },
-        expect: { control: { name: 'Message', value: text } }
+        target: record.target.target,
+        actions: [{ type: 'fill_text', control: record.target.field, text }],
+        before: { control: { ...record.target.field, value: record.target.beforeValue } },
+        expect: { control: { ...record.target.field, value: text } }
       }));
       await item.checkpoint('done', { sourceId: record.id });
     });
@@ -49,7 +70,11 @@ export default async function run(ctx) {
 }
 ```
 
+将前面的 `$definition` 和 `$script` 换为复制目录中的 `definition.json` 与 `workflow.mjs`，并使用新的 `$runDir` 即可运行。源观察必须完整，字段必须按名称和角色匹配唯一且明确启用、可见，值必须是字符串；不满足时本条记录不会写入目标。该示例复制的是已记录的源快照，恢复不会重新读取已提交的观察。源校验失败会终止运行，修正后需新建运行；目标派发前失败按下文 `retry_available` 恢复。
+
 `observe` 返回可持久化的逻辑控件状态，不返回可重用的 `control_id`。`step` 的 `before` 和 `expect` 均必填；运行时在派发前重新找唯一窗口、观察目标、检查 `before`，派发后检查 `expect`。作者应选择能区分目标文档和业务结果的条件，单靠窗口标题并不能证明内容已保存。`mode:'semantic'` 使用当前匹配的 profile 和语义动作；`mode:'batch'` 支持 `click`、`fill_text` 的控件选择器，以及 `type_text`、`press_keys`。基础动作中的控件选择器必须在当前观察里唯一；脚本不能传旧 `control_id`。`waitFor` 使用 Replay 条件格式，只读轮询，`timeoutMs` 上限为 60000。桌面命令必须处于 `withDesktop` 中，同一段持有输入桌面锁，段结束后让出。
+
+命令 ID、`item` 键和 `withDesktop` 键均须为 1..80 个 ASCII 字符，匹配 `[A-Za-z0-9_.-]`；中文业务名称应放在输入数据里，并另设稳定 ID。同一作用域中命令 ID 不能重复，不同 item 可复用 `read`、`fill` 等 ID。逐条 `await` 宿主命令及作用域，不用 `Promise.all` 或 `forEach(async ...)` 并发派发；`withDesktop` 不可嵌套。恢复必须保持相同命令顺序、ID 和参数，循环顺序由已记录输入决定。
 
 可以用 `ask(id,{question,choices})` 等待用户选择，用 `checkpoint(id,value)` 记录业务边界。普通 JS 分支由已记录的输入、观察或回答决定。不要在可信脚本中直接读时钟、随机数或外部文件来决定恢复路径；也不要在宿主命令之外自行执行有副作用的操作。
 
@@ -62,9 +87,14 @@ export default async function run(ctx) {
 | `paused` | 命令边界暂停；`resume` 继续 |
 | `cancelled`、`failed` | 原运行终止 |
 | `waiting_decision` | 用 `answer --choice` 选择日志中列出的值，再 `resume` |
+| `retry_available` | 宿主确认该步尚未调用输入派发；修正现场后显式 `resume` 重试 |
 | `needs_reconciliation` | 未决命令或不完整日志；先检查证据，不直接重派写操作 |
 
-活动运行可以请求 `pause <run-dir>` 或 `cancel <run-dir>`；请求在下一条新命令前生效，已派发动作可能先完成。已经提交的命令结果按顺序重放，不重新操作桌面。中断的 `observe`、`readInput` 和 `checkpoint` 最多自动重试三次；未决写操作需要人工核对。
+活动运行可以请求 `pause <run-dir>` 或 `cancel <run-dir>`；请求在下一条新命令前生效，已派发动作可能先完成。已经提交的命令结果按顺序重放，不重新操作桌面。中断的 `observe`、`readInput` 和 `checkpoint` 最多自动重试三次。
+
+`step` 在输入派发前因 `before` 不满足、目标窗口不唯一、profile 不可用或控件选择不唯一而失败时，返回 `retry_available`，且 `pending.dispatch` 为 `not_dispatched`。修正目标现场后执行 `resume $runDir --trusted-script $script`，重试原命令；此前已提交的步骤不会重派。恢复仍核对原命令身份、顺序和参数，不能改脚本绕过失败检查。只有宿主的类型化派发前错误可写入这条证据，普通错误文本不能解除保护。`run` / `resume` 返回此状态时退出码仍为 1，不会在失败后自行循环重试。
+
+输入派发调用开始后的异常、部分完成、回执丢失或派发后验证失败仍是 `needs_reconciliation`；崩溃后只有未决意图而没有完整的未派发记录时也需核对。历史日志没有此记录的未决写操作保留原有保护。
 
 人工确认当前未决命令后，可把审查所得的 JSON 结果写入文件，再执行：
 
@@ -74,7 +104,38 @@ node node/dist/src/orchestration/cli.js reconcile $runDir 'root/item:asset-b/des
 node node/dist/src/orchestration/cli.js resume $runDir --trusted-script $script
 ```
 
-核对记录标记为 `manual_acceptance`，不冒充机器验证。只有当前未决命令可核对；`ask` 必须通过 `answer`。日志尾部不完整时，`status` 返回 `needs_reconciliation`，普通恢复拒绝。检查后可执行 `repair-tail <run-dir> --reason <text>`：先备份尾部字节，再截除；若留下未决动作，仍需核对。日志中部或顺序损坏不会自动修复。
+核对记录标记为 `manual_acceptance`，不冒充机器验证。只有当前未决命令可核对；`ask` 必须通过 `answer`。`retry_available` 应优先修正现场后 `resume`；若选择人工核对，同样必须确认原 `expect` 已成立，不能以核对跳过未完成的结果。
+
+内置桌面宿主创建的新运行在 `definition.json` 中记录 `desktopResultContract:"desktop-v1"`。这类运行的 `reconcile` 在追加日志前检查结果格式；缺字段、类型错误或证据标签不足会拒绝，未决命令和日志字节保持不变。格式通过后，恢复把该 JSON 返回给脚本，不重复已提交的输入。它只验证可供脚本使用的格式；实际条件由核对人检查，并在 `--reason` 中说明。旧运行和未声明此契约的自定义宿主保留各自 JSON 契约，`suno` 等扩展命令也不套用桌面格式。
+
+`observe`、`waitFor` 的 `checked-result.json` 使用逻辑状态格式，例如：
+
+```json
+{
+  "title": "Editor — reviewed document",
+  "controls": [{"name": "Message", "role": "Edit", "value": "ready", "enabled": true, "offscreen": false}],
+  "inspection": {"status": "ok", "evidenceComplete": true, "truncated": false, "has_more": false, "stopReason": "complete"}
+}
+```
+
+`title` 必须是字符串，`controls` 必须是数组，每个控件的 `name`、`role` 必须是字符串；`value` 若提供必须是字符串，`enabled`、`offscreen` 若提供必须是布尔值。`inspection` 可省略或为 `null`；提供对象时，`status` 为 `ok`、`incomplete` 或 `error`，完整性字段为布尔值。`stopReason`、`message`、`code` 为字符串，`visited` 为非负整数，`metrics` 为非负数值对象，`providerError` 为字符串或包含字符串 `stage`、`message` 的对象。扩展 JSON 字段允许保留。不要凭空写入完整观察；下游脚本仍可能因证据不完整而拒绝继续。核对 `waitFor` 时，还必须逐项检查记录的 `expect`。
+
+`step` 使用以下结果格式；`status:"verified"` 是返回值契约，日志的核对来源仍为 `manual_acceptance`：
+
+```json
+{"status": "verified", "title": "Editor — reviewed document", "verification": "control_checked"}
+```
+
+`verification` 按记录的 `expect` 选择，多个条件同时存在时仍应全部核对，标签按下表由上到下选择：
+
+| `expect` 条件 | 允许的标签 | 人工核对证据 |
+|---|---|---|
+| `file.sha256` | `file_hash_checked` | 目标文件的 SHA-256 与记录摘要相同 |
+| `file` 无摘要 | `file_checked`、`file_hash_checked` | 文件存在且满足记录的尺寸、字节数、采样或参考图条件 |
+| 无 `file`，有 `control` | `control_checked` | 当前唯一、启用且可见的控件及其预期值 |
+| 其余条件 | `condition_checked` | 记录的标题、profile、文件不存在或 capture 条件 |
+
+日志尾部不完整时，`status` 返回 `needs_reconciliation`，普通恢复拒绝。检查后可执行 `repair-tail <run-dir> --reason <text>`：先备份尾部字节，再截除；若留下未决动作，仍需核对。日志中部或顺序损坏不会自动修复。
 
 ## 当前边界
 

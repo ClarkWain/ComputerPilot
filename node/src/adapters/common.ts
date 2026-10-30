@@ -16,11 +16,8 @@ export function failed(value: any): boolean {
 }
 export function complete(value: any): boolean {
   return value && typeof value === 'object' && !failed(value) && Array.isArray(value.elements) &&
-    !value.truncated && !value.has_more && value.evidenceComplete !== false;
-}
-export function shallow(value: any): boolean {
-  return value && typeof value === 'object' && !failed(value) && Array.isArray(value.elements) &&
-    value.stopReason === 'depthLimit';
+    !value.truncated && !value.has_more && value.evidenceComplete !== false &&
+    (value.stopReason === undefined || value.stopReason === 'complete');
 }
 export function equal(a: unknown, b: unknown): boolean { return JSON.stringify(a) === JSON.stringify(b); }
 export function int(value: unknown, min: number, max: number): number {

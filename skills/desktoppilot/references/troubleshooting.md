@@ -12,9 +12,12 @@
 | geometry_changed / control_changed | 窗口或控件变动，重新观察和定位 |
 | window_blocked | 看 blocking_window，观察并处理实际模态对话框 |
 | window_activation_failed | 系统未允许恢复目标焦点；检查输入桌面、模态窗口和权限，不向其它前台窗口继续输入 |
+| target_integrity_higher / target_integrity_unavailable | 环境 ready 不代表目标权限相容。核对 worker 与目标的权限及身份；在授权范围内修正启动上下文后重连，不自动提权或重复点击 |
+| desktop_busy | 另一个 Node 任务持有输入锁，状态读取也可能被拒绝。等待持锁任务完成或按任务要求停止它，再重新观察；锁损坏或恢复中的原因见 message，不直接删除锁文件 |
 | profile_not_matched | 看 semantic.unavailable；不同程序/版本/语言、DPI、工具栏宽度或缩放可能不兼容。对窗口过窄、缩放不符等可恢复条件，任务允许时先调整应用并重新观察；DPI 错误需适配代码支持，放大窗口无效；确认无法匹配才回退基础操作 |
 | profile_ambiguous | 从 semantic.profiles 明确传一个 profile ID，仍会重新验证 |
 | action_not_supported | 使用当前 profile 返回的动作示例，不猜接口 |
+| image_read_failed | 内联图片交付失败；actionResult 保留原始观察或动作回执，completed、failedIndex、dispatch 仍可用于核对。重新观察实际效果，不因图片缺失重放已完成或未知的输入 |
 | 颜色/工具设置失败 | 看失败截图和 phase，修正具体控件条件；不要重画已完成形状 |
 | 超时或连接断开 | 动作可能已发生。检查实际结果，再处理剩余部分；不要自动重放整个任务 |
 | 输入回执成功但效果不对 | 回执不等于结果。检查实际字段、画面、缩放、选区、工具与任务要求 |

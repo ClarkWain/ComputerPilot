@@ -10,6 +10,8 @@ import { assertExistingDirectoryNoLinks, ensureDirectoryNoLinks, sha256File } fr
 import { sha256Text, stableJson } from '../workflow/plan.js';
 import { validateCondition } from '../replay/recipe.js';
 import { ORCHESTRATION_WORKER_MARKER } from './script-worker.js';
+import { validateDesktopReconciliation } from './result.js';
+import { CommandNotDispatchedError } from './types.js';
 import type { AskArgs, CommandKind, CommandRequest, OrchestrationDefinition, OrchestrationHost,
   OrchestrationReport, OrchestrationStatus } from './types.js';
 
@@ -23,7 +25,8 @@ const normalized = (request: CommandRequest): CommandRequest =>
   ({ kind: request.kind, scope: request.scope, id: request.id, args: request.args ?? null });
 
 type History = { committed: Array<{ request: CommandRequest; value: unknown }>;
-  pending?: { request: CommandRequest; message?: string }; finished: boolean; result?: unknown; failed?: string;
+  pending?: { request: CommandRequest; message?: string; dispatch?: 'not_dispatched' };
+  retry?: CommandRequest; finished: boolean; result?: unknown; failed?: string;
   readRetries: Map<string,number>; paused: boolean; cancelled: boolean };
 
 function safelyRetryable(request: CommandRequest): boolean {
@@ -39,6 +42,7 @@ function inspectEvents(definition: OrchestrationDefinition, events: WorkflowEven
   const seen = new Set<string>();
   const readRetries = new Map<string,number>();
   let pending: History['pending'];
+  let retry: History['retry'];
   let finished = false;
   let result: unknown;
   let failed: string | undefined;
@@ -66,6 +70,9 @@ function inspectEvents(definition: OrchestrationDefinition, events: WorkflowEven
       const key = commandKey(request);
       if (seen.has(key) || event.key !== key || event.requestHash !== sha256Text(stableJson(request)))
         throw new Error(`Orchestration command identity or hash mismatch: ${key}`);
+      if (retry && stableJson(retry) !== stableJson(request))
+        throw new Error(`Orchestration retry command history diverged at ${key}`);
+      retry = undefined;
       seen.add(key); pending = { request };
     } else if (event.kind === 'command_commit') {
       if (!pending || event.key !== commandKey(pending.request) || !('value' in event))
@@ -75,24 +82,29 @@ function inspectEvents(definition: OrchestrationDefinition, events: WorkflowEven
     } else if (event.kind === 'command_error') {
       if (!pending || event.key !== commandKey(pending.request)) throw new Error('Orchestration error has no matching intent');
       pending.message = String(event.message ?? 'Command outcome is uncertain');
+      if (event.dispatch !== undefined && (event.dispatch !== 'not_dispatched' || pending.request.kind !== 'step' ||
+          event.requestHash !== sha256Text(stableJson(pending.request))))
+        throw new Error('Invalid orchestration dispatch evidence');
+      pending.dispatch = event.dispatch === 'not_dispatched' ? 'not_dispatched' : undefined;
     } else if (event.kind === 'command_retry') {
       if (!pending || event.key !== commandKey(pending.request) ||
-          !safelyRetryable(pending.request))
+          (!safelyRetryable(pending.request) && pending.dispatch !== 'not_dispatched'))
         throw new Error('Only a pending retryable command can be retried');
       const key=commandKey(pending.request);
-      readRetries.set(key,(readRetries.get(key)??0)+1);
+      if (safelyRetryable(pending.request)) readRetries.set(key,(readRetries.get(key)??0)+1);
+      retry = pending.request;
       seen.delete(key); pending=undefined;
     } else if (event.kind === 'journal_repair') {
       if (typeof event.reason!=='string'||!event.reason.trim()) throw new Error('Journal repair requires a reason');
     } else if (event.kind === 'run_finished') {
-      if (pending) throw new Error('Orchestration finished with an unresolved command');
+      if (pending || retry) throw new Error('Orchestration finished with an unresolved command');
       result = event.result ?? null; finished = true;
     } else if (event.kind === 'run_failed') {
       if (pending) throw new Error('Orchestration failed with an unresolved command');
       failed = String(event.message ?? 'Workflow script failed');
     } else throw new Error(`Unknown orchestration event: ${event.kind}`);
   }
-  return { committed, pending, finished, result, failed, readRetries, paused, cancelled };
+  return { committed, pending, retry, finished, result, failed, readRetries, paused, cancelled };
 }
 
 function validateCommand(request: CommandRequest): void {
@@ -188,12 +200,14 @@ function report(definition: OrchestrationDefinition, runDirectory: string, histo
     history.cancelled ? 'cancelled' : history.paused ? 'paused' :
     active && history.pending ? 'running' :
     history.pending?.request.kind === 'ask' ? 'waiting_decision' :
+    history.pending?.dispatch === 'not_dispatched' ? 'retry_available' :
     history.pending ? 'needs_reconciliation' : 'running';
   return { schemaVersion: 1, name: definition.name, status,
     commandCount: history.committed.length + (history.pending ? 1 : 0),
     committedCount: history.committed.length,
     ...(history.pending ? { pending: { key: commandKey(history.pending.request), kind: history.pending.request.kind,
-      args: history.pending.request.args } } : {}),
+      args: history.pending.request.args,
+      ...(history.pending.dispatch ? {dispatch:history.pending.dispatch} : {}) } } : {}),
     ...(history.pending?.message || history.failed || (!active && status === 'running' ? 'Interrupted; resume is available' : undefined)
       ? { message: history.pending?.message ?? history.failed ?? 'Interrupted; resume is available' } : {}),
     ...(history.finished ? {result:history.result} : {}),
@@ -205,6 +219,7 @@ async function load(runDirectory: string, allowIncompleteTail = false): Promise<
   await assertExistingDirectoryNoLinks(runDirectory);
   const definition = JSON.parse(await readFile(join(runDirectory,'definition.json'),'utf8')) as OrchestrationDefinition;
   if (!definition || definition.schemaVersion !== 1 || !definition.name || !definition.script ||
+      (definition.desktopResultContract !== undefined && definition.desktopResultContract !== 'desktop-v1') ||
       !/^[a-f0-9]{64}$/.test(definition.scriptSha256) ||
       sha256Text(stableJson(definition.input)) !== definition.inputSha256)
     throw new Error('Frozen orchestration definition is invalid');
@@ -262,12 +277,15 @@ async function execute(definition: OrchestrationDefinition, runDirectory: string
     if (await sha256File(definition.script) !== definition.scriptSha256)
       throw new Error('Trusted workflow script changed; create a new run');
     const loaded = await load(runDirectory);
-    if (loaded.history.pending && safelyRetryable(loaded.history.pending.request)) {
+    if (loaded.history.pending && (safelyRetryable(loaded.history.pending.request) ||
+        loaded.history.pending.dispatch === 'not_dispatched')) {
       const key=commandKey(loaded.history.pending.request);
       if ((loaded.history.readRetries.get(key)??0)>=3) throw new Error(`${key} exceeded three read-only recovery attempts`);
       const retryJournal=await WorkflowJournal.appendExisting(runDirectory);
       try { loaded.events.push(await retryJournal.append({kind:'command_retry',key,
-        reason:'Retryable command may safely be repeated after interruption'})); }
+        reason:loaded.history.pending.dispatch === 'not_dispatched' ?
+          'Explicit resume of a command rejected before input dispatch' :
+          'Retryable command may safely be repeated after interruption'})); }
       finally { await retryJournal.close(); }
       loaded.history=inspectEvents(definition,loaded.events);
     }
@@ -282,6 +300,7 @@ async function execute(definition: OrchestrationDefinition, runDirectory: string
       events.push(await journal.append({kind:'run_resumed'}));
     }
     const prior = loaded.history.committed;
+    let retry = loaded.history.retry;
     let replayIndex = 0;
     const seen = new Set<string>();
     let stop: OrchestrationStatus | undefined;
@@ -321,6 +340,7 @@ async function execute(definition: OrchestrationDefinition, runDirectory: string
       }
       if (type === 'finished') {
         if (replayIndex !== prior.length) throw new Error('Workflow ended before consuming its recorded command history');
+        if (retry) throw new Error('Workflow ended before retrying its recorded command');
         stableJson(messageValue.value ?? null);
         await append('run_finished',{result:messageValue.value ?? null}); stop = 'completed';
         worker.kill(); return;
@@ -339,6 +359,8 @@ async function execute(definition: OrchestrationDefinition, runDirectory: string
         send(id,true,old.value); return;
       }
       if (seen.size > maxCommands) throw new Error('Workflow command count limit exceeded');
+      if (retry && stableJson(retry) !== stableJson(request))
+        throw new Error(`Workflow retry command history diverged at ${key}`);
       const control=await readControlRequest(runDirectory);
       if (control) {
         await append(control==='pause'?'run_paused':'run_cancelled',
@@ -346,16 +368,25 @@ async function execute(definition: OrchestrationDefinition, runDirectory: string
         stop=control==='pause'?'paused':'cancelled'; worker.kill(); return;
       }
       await append('command_intent',{key,request,requestHash:sha256Text(stableJson(request))});
+      retry = undefined;
       if (request.kind === 'ask') { stop = 'waiting_decision'; worker.kill(); return; }
+      let notDispatched = false;
       try {
-        const value = request.kind === 'readInput' ? definition.input :
-          request.kind === 'checkpoint' ? request.args : await host.execute(request);
+        let value: unknown;
+        try {
+          value = request.kind === 'readInput' ? definition.input :
+            request.kind === 'checkpoint' ? request.args : await host.execute(request);
+        } catch (error) {
+          notDispatched = request.kind === 'step' && error instanceof CommandNotDispatchedError;
+          throw error;
+        }
         stableJson(value);
         await append('command_commit',{key,value});
         send(id,true,value);
       } catch (error) {
         message = error instanceof Error ? error.message : String(error);
-        await append('command_error',{key,message});
+        await append('command_error',{key,message,...(notDispatched ?
+          {dispatch:'not_dispatched',requestHash:sha256Text(stableJson(request))} : {})});
         stop = 'needs_reconciliation'; worker.kill();
       }
     };
@@ -397,7 +428,8 @@ export async function startOrchestration(name: string, script: string, input: un
     const scriptPath = resolve(script);
     const definition: OrchestrationDefinition = { schemaVersion:1,name,script:scriptPath,
       scriptSha256:await sha256File(scriptPath),input,inputSha256:sha256Text(stableJson(input)),
-      createdAt:new Date().toISOString() };
+      createdAt:new Date().toISOString(),...(host.desktopResultContract ?
+        {desktopResultContract:host.desktopResultContract} : {}) };
     await writeAtomicJson(join(root,'definition.json'),definition);
     const journal = await WorkflowJournal.create(root);
     try { await journal.append({kind:'run_started',runId:randomUUID(),
@@ -441,6 +473,8 @@ export async function reconcileOrchestration(runDirectory: string, key: string, 
     const { definition, history, events } = await load(root);
     if (!history.pending || commandKey(history.pending.request) !== key || history.pending.request.kind === 'ask')
       throw new Error('Only the current uncertain command can be reconciled');
+    if (definition.desktopResultContract === 'desktop-v1')
+      validateDesktopReconciliation(history.pending.request,value);
     const journal = await WorkflowJournal.appendExisting(root);
     try { events.push(await journal.append({kind:'command_commit',key,value,
       verification:'manual_acceptance',reason})); }

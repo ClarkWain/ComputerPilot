@@ -7,6 +7,7 @@ import type { ReplayApi } from '../replay/runner.js';
 import { checkCapture } from '../replay/visual.js';
 import { validateCondition, type ReplayCondition } from '../replay/recipe.js';
 import type { CommandRequest, ObserveArgs, OrchestrationHost, StepArgs, Target, WaitArgs } from './types.js';
+import { CommandNotDispatchedError } from './types.js';
 
 const objects = (value: unknown): JsonObject[] => Array.isArray(value) ?
   value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) as JsonObject[] : [];
@@ -61,8 +62,11 @@ export function createDesktopOrchestrationHost(api: ReplayApi, runDirectory: str
     return found;
   };
   return {
+    desktopResultContract: 'desktop-v1',
     releaseDesktop,
     async execute(request: CommandRequest): Promise<unknown> {
+      let dispatchStarted = false;
+      try {
       if (!['observe','step','waitFor'].includes(request.kind)) throw new Error(`Unsupported desktop command: ${request.kind}`);
       await ensureLease();
       const args = request.args as ObserveArgs | StepArgs | WaitArgs;
@@ -112,9 +116,12 @@ export function createDesktopOrchestrationHost(api: ReplayApi, runDirectory: str
             ? {type:'click',control_id:matches[0].control_id,...(action.count?{count:action.count}:{})}
             : {type:'fill_text',control_id:matches[0].control_id,text:action.text};
         });
+        dispatchStarted = true;
         receipt=await api.call('execute_batch',{window_id:windowId,actions});
-      } else receipt=await api.call('execute_semantic',{window_id:windowId,profile:step.profile,
-        actions:step.actions});
+      } else {
+        dispatchStarted = true;
+        receipt=await api.call('execute_semantic',{window_id:windowId,profile:step.profile,actions:step.actions});
+      }
       requireOk(receipt,step.mode==='batch'?'execute_batch':'execute_semantic');
       if (receipt.completed !== step.actions.length) throw new Error('Semantic action count was not confirmed');
       const deadline = Date.now() + timeoutMs;
@@ -127,6 +134,12 @@ export function createDesktopOrchestrationHost(api: ReplayApi, runDirectory: str
             step.expect.file ? 'file_checked' : step.expect.control ? 'control_checked' : 'condition_checked' };
         if (Date.now() >= deadline) throw new Error(`Postcondition timed out: ${found.join('; ')}`);
         await delay(Math.min(250,Math.max(1,deadline-Date.now())));
+      }
+      } catch (error) {
+        if (request.kind === 'step' && !dispatchStarted)
+          throw new CommandNotDispatchedError(error instanceof Error ? error.message : String(error), { cause:error });
+        if (error instanceof CommandNotDispatchedError) throw new Error(error.message, { cause:error });
+        throw error;
       }
     }
   };

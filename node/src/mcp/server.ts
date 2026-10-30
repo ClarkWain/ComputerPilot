@@ -20,8 +20,10 @@ function inlineCapture(value: JsonObject): JsonObject | undefined {
 }
 
 export function createServer(agent: AgentApi, preflight?: JsonObject, recorder?: ReplayRecorder): McpServer {
-  const server=new McpServer({name:'desktop-pilot',version:'0.4.0'}, {
-    instructions:'DesktopPilot must run in the same Windows session and input desktop as the target app. If preflight.ready is false, correct launch context. Use list_windows, get_window_state, then execute_semantic for a matching profile or execute_batch. Inspect results before another action. References are worker-generation-local; do not replay uncertain input. Startup desktopPreflight: '+JSON.stringify(preflight??{})
+  const serverInfo={name:'desktop-pilot',version:'0.4.0',
+    _meta:{'desktopPilot/desktopPreflight':preflight??{}}};
+  const server=new McpServer(serverInfo, {
+    instructions:'DesktopPilot must run in the same Windows session and input desktop as the target app. If preflight.ready is false, correct launch context. Use list_windows, get_window_state, then execute_semantic for a matching profile or execute_batch. Tool JSON is in structuredContent; content carries images only. Remote hosts need image_delivery:inline with mode:image or both. Inspect completed, failedIndex and dispatch before another action. References are worker-generation-local; do not replay uncertain input. Startup desktopPreflight: '+JSON.stringify(preflight??{})
   });
   for(const tool of publicTools) {
     server.registerTool(tool.name, {
@@ -60,7 +62,9 @@ export function createServer(agent: AgentApi, preflight?: JsonObject, recorder?:
         if(capture) {
           try { content.push({type:'image',mimeType:typeof capture.mimeType==='string'?capture.mimeType:'image/png',
             data:(await readFile(capture.path as string)).toString('base64')}); }
-          catch(error) { return {content:[],structuredContent:{status:'error',code:'image_read_failed',message:String(error)},isError:true}; }
+          catch(error) { return {content:[],structuredContent:{...value,status:'error',code:'image_read_failed',
+            message:String(error),actionResult:value,
+            ...(tool.name==='execute_semantic' && value.dispatch===undefined?{dispatch:'unknown'}:{})},isError:true}; }
         }
       }
       return {content,structuredContent:value,isError:operationFailed(value)};
