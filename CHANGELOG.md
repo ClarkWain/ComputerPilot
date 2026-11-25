@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.6.1 — Unreleased
+## 0.6.2
+
+- Fix macOS window matching when Chrome adds the browser or profile name to the Accessibility title. When titles differ, accept the match only if the same process has a single window with matching bounds in both window lists.
+
+## 0.6.1
 
 - Add npm installation through `computerpilot` and exact-version Windows x64/macOS arm64 native packages, with no install-time scripts or runtime downloads.
 - Add `computer-pilot info`, `mcp-config` and `--version`; forward native commands and MCP streams unchanged.

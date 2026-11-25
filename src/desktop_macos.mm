@@ -164,6 +164,24 @@ struct Desktop::Impl {
         else info(it->second);return it->second;
     }
     AX app(pid_t pid) {auto a=adopt(AXUIElementCreateApplication(pid));AXUIElementSetMessagingTimeout(a.get(),0.25);return a;}
+    static bool same_window_geometry(CGRect a,CGRect b) {
+        return std::abs(a.origin.x-b.origin.x)<=1&&std::abs(a.origin.y-b.origin.y)<=1&&
+               std::abs(a.size.width-b.size.width)<=1&&std::abs(a.size.height-b.size.height)<=1;
+    }
+    static bool unique_compositor_geometry(const Window& w,CGRect target) {
+        NSArray* rows=CFBridgingRelease(CGWindowListCopyWindowInfo(kCGWindowListOptionAll,kCGNullWindowID));
+        bool found=false;
+        for(NSDictionary* row in rows) {
+            if([row[(__bridge NSString*)kCGWindowOwnerPID] intValue]!=w.pid||
+               [row[(__bridge NSString*)kCGWindowLayer] intValue]!=0)continue;
+            CGRect candidate{};
+            if(!CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)row[(__bridge NSString*)kCGWindowBounds],&candidate)||
+               !same_window_geometry(candidate,target))continue;
+            if([row[(__bridge NSString*)kCGWindowNumber] unsignedIntValue]!=w.id)return false;
+            found=true;
+        }
+        return found;
+    }
     AX axwindow(Window& w) {
         if(!AXIsProcessTrusted())throw std::runtime_error("accessibility_permission_required");
         if(w.sheet)return w.sheet;
@@ -171,7 +189,7 @@ struct Desktop::Impl {
         auto application=app(w.pid);auto values=attribute(application.get(),kAXWindowsAttribute);std::vector<AX> matches;
         if(values.value&&CFGetTypeID(values)==CFArrayGetTypeID())for(id value in (__bridge NSArray*)values.value) {
             auto e=(__bridge AXUIElementRef)value;auto b=bounds(e);
-            if(std::abs(b.origin.x-target.origin.x)<=1&&std::abs(b.origin.y-target.origin.y)<=1&&std::abs(b.size.width-target.size.width)<=1&&std::abs(b.size.height-target.size.height)<=1)matches.push_back(retain(e));
+            if(same_window_geometry(b,target))matches.push_back(retain(e));
         }
         // Preview can expose several overlapping document windows with the
         // same geometry. Use the compositor title as additional identity
@@ -180,7 +198,11 @@ struct Desktop::Impl {
         if(!title.empty()) {
             std::vector<AX> titled;
             for(const auto& candidate:matches)if(text(candidate.get(),kAXTitleAttribute)==title)titled.push_back(candidate);
-            matches=std::move(titled);
+            if(titled.size()==1)return titled.front();
+            // Chrome decorates AX titles with browser/profile names. If titles
+            // disagree, require a unique rectangle in both window lists.
+            if(titled.empty()&&matches.size()==1&&unique_compositor_geometry(w,target))return matches.front();
+            if(matches.size()==1)throw std::runtime_error("AX window identity ambiguous; inspect window list");
         }
         if(matches.size()==1)return matches[0];
         throw std::runtime_error(matches.empty()?"AX window unavailable; use image mode":"AX window identity ambiguous; inspect window list");

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.29)
-project(ComputerPilot VERSION 0.6.1 LANGUAGES C CXX)
+project(ComputerPilot VERSION 0.6.2 LANGUAGES C CXX)
 if(APPLE)
   enable_language(OBJCXX)
   set(CMAKE_OBJCXX_STANDARD 20)
