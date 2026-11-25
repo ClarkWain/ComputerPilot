@@ -1,6 +1,6 @@
 {
   "name": "computerpilot",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
   "description": "Native computer use for AI agents on Windows and macOS",
   "type": "module",
@@ -16,8 +16,8 @@
   "bin": { "computer-pilot": "bin/computer-pilot.mjs" },
   "files": ["bin/", "lib/", "skills/computerpilot/", "LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "README.zh-CN.md"],
   "optionalDependencies": {
-    "computerpilot-win32-x64": "0.6.1",
-    "computerpilot-darwin-arm64": "0.6.1"
+    "computerpilot-win32-x64": "0.6.2",
+    "computerpilot-darwin-arm64": "0.6.2"
   },
   "publishConfig": { "access": "public" },
   "scripts": {
